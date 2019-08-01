@@ -64,7 +64,7 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
     // TODO: convert to SoA
     size_t          sceneSize = sizeof( ispc::sphere_t ) * scene.objects.size();
     ispc::sphere_t* pScene    = (ispc::sphere_t*)new uint8_t[ sceneSize ];
-    printf( "Allocated %zd bytes for %zd objects\n", sceneSize, scene.objects.size() );
+    //printf( "Allocated %zd bytes for %zd objects\n", sceneSize, scene.objects.size() );
 
     ispc::sphere_t* p = pScene;
     for ( IVisible* obj : scene.objects ) {

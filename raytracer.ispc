@@ -206,6 +206,12 @@ export void cameraInitISPC( uniform RenderGangContext * uniform ctx )
     //    s_camera.horizontal.x, s_camera.horizontal.y, s_camera.horizontal.z,
     //    s_camera.vertical.x, s_camera.vertical.y, s_camera.vertical.z
     //);
+
+#ifdef ISPC_RANDOM
+    _randomInit( clock() );
+#else
+    _randomInit( clock() );
+#endif
 }
 
 
@@ -213,13 +219,7 @@ export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
 {
     //print( "renderISPC: blockID % of %\n", ctx->blockID, ctx->totalBlocks );
 
-#ifdef ISPC_RANDOM
-    _randomInit( ctx->blockID );
-#else
-    _randomInit( programIndex * ctx->blockID * ctx->xOffset * ctx->yOffset );
-#endif
-
-    for ( int y = ctx->yOffset; y < ctx->yOffset + ctx->blockSize; y += 1 )
+    for ( uniform int y = ctx->yOffset; y < ctx->yOffset + ctx->blockSize; y += 1 )
     {
         for ( int x = ctx->xOffset + programIndex; x < ctx->xOffset + ctx->blockSize; x += programCount )
         {
@@ -232,11 +232,9 @@ export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
             //    continue;
             //}
 
-            unsigned int32 p = y * ctx->cols + x;
-
             vector3 color = { 0, 0, 0 };
 
-            for ( unsigned int32 s = 0; s < ctx->num_aa_samples; s++ )
+            for ( uniform unsigned int32 s = 0; s < ctx->num_aa_samples; s++ )
             {
                 float u = ((float)x) / ctx->cols;
                 float v = ((float)y) / ctx->rows;
@@ -262,6 +260,7 @@ export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
             vector3 _color = { sqrt( color.r ), sqrt( color.g ), sqrt( color.b ) };
             color = _color;
 
+            unsigned int32 p = y * ctx->cols + x;
             ctx->framebuffer[ p ] = ( ( int32 )( color.r * 255.99f ) << 24 ) | ( ( int32 )( color.g * 255.99f ) << 16 ) | ( ( int32 )( color.b * 255.99f ) << 8 );
         }
     }
@@ -666,7 +665,7 @@ static inline float drand48( float u, float v )
     return rval;
 }
 
-static inline float xorrand( unsigned int32 seed )
+static inline unsigned int32 xorrand( unsigned int32 seed )
 {
     // Xorshift algorithm from George Marsaglia's paper
     seed ^= ( seed << 13 );

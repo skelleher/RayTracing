@@ -148,7 +148,7 @@ thread_pool_t threadPoolInit( uint32_t numThreads )
         assert( tp->threads[ i ].thread->joinable() );
     }
 
-    printf( "Created pool %d, %d threads\n", handle, numThreads );
+    //printf( "Created pool %d, %d threads\n", handle, numThreads );
 
     return handle;
 }
