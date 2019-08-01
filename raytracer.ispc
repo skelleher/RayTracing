@@ -223,9 +223,9 @@ export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
     {
         for ( int x = ctx->xOffset + programIndex; x < ctx->xOffset + ctx->blockSize; x += programCount )
         {
-            // PROBLEM: this skips the right edge of the image if not a multiple of programCount
-            if ( x >= ctx->cols || y >= ctx->rows )
-                return true;
+            if ( x >= ctx->cols || y >= ctx->rows ) {
+                continue;
+            }
 
             //if ( ctx->debug && ( y == ctx->yOffset || y == ctx->yOffset + ctx->blockSize - 1 || x == ctx->xOffset || x == ctx->xOffset + ctx->blockSize - 1 ) ) {
             //    ctx->framebuffer[ y * ctx->cols + x ] = 0xFF000000;

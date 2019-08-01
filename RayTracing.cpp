@@ -125,7 +125,6 @@ int main( int argc, char** argv )
         CHECK_CUDA( cudaMallocManaged( (void**)&frameBuffer, ROWS * COLS * sizeof( uint32_t ) ) );
     } else {
         frameBuffer = new uint32_t[ ROWS * COLS ];
-        memset( frameBuffer, 0xCC, sizeof( uint32_t ) * ROWS * COLS );
     }
 
     //
