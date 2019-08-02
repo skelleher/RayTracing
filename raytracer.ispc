@@ -825,9 +825,10 @@ static inline vector3 _randomOnUnitDisk()
     do {
         vector3 v1 = { _random(), _random(), 0.0f };
         vector3 v2 = { 1.0f, 1.0f, 0.0f };
+
         point.x = 2.0f * v1.x - v2.x;
-        point.y = 2.0f * v1.x - v2.y;
-        point.z = 2.0f * v1.x - v2.z;
+        point.y = 2.0f * v1.y - v2.y;
+        point.z = 2.0f * v1.z - v2.z;
     } while ( _dot( point, point ) >= 1.0f && maxTries-- );
 
     return point;
