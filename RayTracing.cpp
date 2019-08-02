@@ -4,7 +4,7 @@
 #include "argsparser.h"
 #include "camera.h"
 #include "material.h"
-#include "msgqueue.h"
+#include "msg_queue.h"
 #include "perf_timer.h"
 #include "ray.h"
 #include "raytracer.h"

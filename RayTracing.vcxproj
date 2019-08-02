@@ -185,7 +185,7 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="material.h" />
     <ClInclude Include="matrix.h" />
-    <ClInclude Include="msgqueue.h" />
+    <ClInclude Include="msg_queue.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ray.h" />
     <ClInclude Include="result.h" />
@@ -237,7 +237,7 @@
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
       <FileType>CppCode</FileType>
     </CudaCompile>
-    <ClCompile Include="msgqueue.cpp">
+    <ClCompile Include="msg_queue.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
