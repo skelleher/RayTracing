@@ -10,6 +10,7 @@
 #include "raytracer.h"
 #include "sphere.h"
 #include "test.h"
+#include "thread_pool.h"
 #include "utils.h"
 #include "vector_cuda.h"
 

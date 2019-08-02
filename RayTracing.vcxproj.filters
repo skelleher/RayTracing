@@ -104,6 +104,9 @@
     <ClCompile Include="msg_queue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="thread_pool_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="raytracer.cu">
@@ -123,6 +126,8 @@
     <CustomBuild Include="test.ispc">
       <Filter>Source Files</Filter>
     </CustomBuild>
-    <CustomBuild Include="raytracer.ispc" />
+    <CustomBuild Include="raytracer.ispc">
+      <Filter>Source Files</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>

@@ -75,7 +75,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     // Flatten the Scene object to an array of sphere_t, which is what Scene should've been in the first place
     size_t    sceneSize = sizeof( sphere_t ) * scene.objects.size();
     sphere_t* pScene    = (sphere_t*)new uint8_t[ sceneSize ];
-    printf( "Allocated %zd bytes for %zd objects\n", sceneSize, scene.objects.size() );
+    //printf( "Allocated %zd bytes for %zd objects\n", sceneSize, scene.objects.size() );
 
     sphere_t* p = pScene;
     for ( IVisible* obj : scene.objects ) {
@@ -116,7 +116,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
             ctx->debug               = debug;
             ctx->recursive           = recursive;
 
-            threadPoolSubmitJob( tp, _renderJob, ctx );
+            threadPoolSubmitJob( Function(_renderJob, ctx) );
 
             //printf( "Submit block %d of %d\n", blockID, numBlocks );
 
@@ -135,7 +135,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
 
     threadPoolDeinit( tp );
     delete[] contexts;
-    ///////delete[] pScene;
+    //delete[] pScene;
 
     printf( "renderScene: %f s\n", t.ElapsedSeconds() );
 

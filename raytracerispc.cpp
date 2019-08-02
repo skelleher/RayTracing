@@ -62,7 +62,7 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
         cols, rows, blockSize, blockSize, numBlocks, tp, numThreads );
 
     // Flatten the Scene object to an SoA ispc::sphere_t
-    size_t sceneSize = sizeof( ispc::sphere_t ) * scene.objects.size();
+    size_t sceneSize = scene.objects.size();
 
     ispc::sphere_t _scene;
     _scene.center_x   = new float[ sceneSize ];
@@ -71,7 +71,6 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
     _scene.radius     = new float[ sceneSize ];
     _scene.materialID = new uint32_t[ sceneSize ];
 #ifdef MATERIAL_SHADE
-    //_scene.material = new ispc::material_t[sceneSize];
     ispc::material_t _materials;
     _materials.type            = new ispc::material_type_t[ sceneSize ];
     _materials.albedo_r        = new float[ sceneSize ];
@@ -151,7 +150,7 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
             ctx->totalBlocks         = numBlocks;
             ctx->debug               = debug;
 
-            threadPoolSubmitJob( tp, _renderJobISPC, ctx );
+            threadPoolSubmitJob( Function(_renderJobISPC, ctx) );
 
             //printf( "Submit block %d of %d\n", blockID, numBlocks );
 

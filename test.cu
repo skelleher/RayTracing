@@ -108,7 +108,7 @@ void testCPUThreaded()
         ctx.y                 = &y[ ctx.start ];
         ctx.complete          = &complete;
 
-        threadPoolSubmitJob( tp, _cpu_add_thread, &ctx, THREAD_POOL_SUBMIT_BLOCKING );
+        threadPoolSubmitJob( Function(_cpu_add_thread, &ctx) );
     }
 
     // Wait for threads to complete

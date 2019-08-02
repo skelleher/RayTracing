@@ -3,12 +3,12 @@
 #include "perf_timer.h"
 #include "utils.h"
 
-#include <assert.h>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
-#include <stdint.h>
 #include <string>
 
 
@@ -20,6 +20,7 @@ const int MAX_MSG_QUEUES = 5;
 typedef struct _queue {
     std::mutex              mutex;
     std::condition_variable notification;
+    std::atomic<bool>       notified;
     size_t                  msg_size;
     uint32_t                length;
     std::atomic<uint32_t>   used;
@@ -35,6 +36,7 @@ typedef struct _queue {
     _queue() :
         head( nullptr ),
         tail( nullptr ),
+        notified( false ),
         msg_size( 0 ),
         length( 0 ),
         used( 0 ),
@@ -116,6 +118,7 @@ result queue_send( queue_t queue, const void* msg )
 
     std::lock_guard<std::mutex> queue_lock( p_queue->mutex );
     _queue_push_back( p_queue, msg );
+    p_queue->notified = true;
     p_queue->notification.notify_one();
 
     return R_OK;
@@ -141,6 +144,13 @@ result queue_send_blocking( queue_t queue, const void* msg, uint32_t timeout_ms 
             rval = R_TIMEOUT;
             break;
         }
+
+        static unsigned int timeout_warning_ms = 1000;
+        if ( (unsigned int)timer.ElapsedMilliseconds() >= timeout_warning_ms ) {
+            printf( "queue_send_blocking(%d) hung for %d seconds\n", queue, (unsigned)timer.ElapsedSeconds() );
+            timeout_warning_ms *= 2;
+        }
+
         p_queue->mutex.lock();
     };
     p_queue->notification.notify_one();
@@ -159,6 +169,7 @@ result queue_send_and_wait_for_response( queue_t queue, const void* msg )
 
     p_queue->mutex.lock();
     _queue_push_back( p_queue, msg );
+    p_queue->notified = true;
     p_queue->notification.notify_one();
     p_queue->mutex.unlock();
 
@@ -185,24 +196,33 @@ result queue_receive( queue_t queue, void* p_msg, size_t msg_size, unsigned int 
         return R_FAIL;
     }
 
+    result    rval    = R_FAIL;
     _queue_t* p_queue = &s_queues[ queue ];
 
     std::unique_lock<std::mutex> queue_lock( p_queue->mutex );
 
     std::chrono::milliseconds ms( timeout_ms );
-    while ( _queue_is_empty( queue ) ) {
+    while ( _queue_is_empty( queue ) && !p_queue->notified ) {
         std::cv_status status = p_queue->notification.wait_for( queue_lock, ms );
 
         if ( status == std::cv_status::timeout ) {
-            return R_TIMEOUT;
+            rval = R_TIMEOUT;
+            goto Exit;
         }
 
+        rval = R_OK;
         break;
     }
 
+    if ( p_queue->notified || !_queue_is_empty( queue ) )
+        rval = R_OK;
+
     _queue_pop_front( p_queue, p_msg );
 
-    return R_OK;
+Exit:
+    p_queue->notified = false;
+
+    return rval;
 }
 
 
@@ -228,6 +248,7 @@ result queue_notify( queue_t queue )
     _queue_t* p_queue = &s_queues[ queue ];
 
     std::lock_guard<std::mutex> queue_lock( p_queue->mutex );
+    p_queue->notified = true;
     p_queue->notification.notify_one();
 
     return R_OK;
