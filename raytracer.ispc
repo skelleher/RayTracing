@@ -1,14 +1,12 @@
 
+// Select a shading method (these are mutually exclusive)
 //#define DIFFUSE_SHADE
 //#define NORMAL_SHADE
+#define MATERIAL_SHADE
 
 // Use the built-in prng,
 // otherwise use a custom one.
 #define ISPC_RANDOM
-
-
-// TODO: a vector3 struct with operator overloading for +-*/
-typedef float<3> vector3;
 
 #define M_PI 3.14159265358979323846f
 #define RADIANS( x ) ( (x)*M_PI / 180.0f )
@@ -18,10 +16,11 @@ typedef float<3> vector3;
 
 
 // NOTE: any struct that is typedef'd MUST have a _tag in order to match a function signature
-// NOTE: ISPC struct fields are unbound by default;
+// NOTE: ISPC struct fields are "unbound" by default;
 // you can declare an instance of struct as either uniform or varying
 
-// TODO: operator overloading for +-*/
+typedef float<3> vector3;
+
 struct ray {
     vector3 origin;
     vector3 direction;
@@ -37,25 +36,31 @@ enum material_type_t {
 
 
 struct material_t {
-    material_type_t type;
-    float           albedo[3];
-    float           blur;
-    float           refractionIndex;
+    material_type_t* type;
+    float*           albedo_r;
+    float*           albedo_g;
+    float*           albedo_b;
+    float*           blur;
+    float*           refractionIndex;
 };
 
 
 struct hit_info {
-    float      distance;
-    vector3    point;
-    vector3    normal;
-    material_t   material;
+    float          distance;
+    vector3        point;
+    vector3        normal;
+    unsigned int32 materialID;
 };
 
 
 struct sphere_t {
-    float      center[3];
-    float      radius;
-    material_t material; // TODO: should be an index into a materials array
+    float*      center_x;
+    float*      center_y;
+    float*      center_z;
+    float*      radius;
+#ifdef MATERIAL_SHADE
+    unsigned int32* materialID;
+#endif
 };
 
 
@@ -86,7 +91,9 @@ struct RenderGangContext {
     float   camera_focusDistance;
 
     const sphere_t*      scene;
+    const material_t*    materials;
     unsigned int32       sceneSize;
+
     unsigned int32*      framebuffer;
     unsigned int32       rows;
     unsigned int32       cols;
@@ -122,14 +129,14 @@ static vector3 _randomColor( float u, float v );
 static vector3 _gradient( float u, float v );
 static vector3 _background( ray& r );
 static vector3 _sky( float u, float v );
-static vector3 _color( ray& r, const sphere_t* scene, unsigned int32 sceneSize, unsigned int32 max_depth );
-static bool    _sceneHit( ray& r, const uniform sphere_t* varying scene, unsigned int32 sceneSize, float t_min, float t_max, varying hit_info* uniform p_hit );
-static bool    _sphereHit( ray& r, const uniform sphere_t* varying sphere, float t_min, float t_max, varying hit_info* uniform p_hit );
+static vector3 _color( ray& r, const uniform sphere_t* uniform scene, const uniform material_t* uniform materials, uniform unsigned int32 sceneSize, uniform unsigned int32 max_depth );
+static bool    _sceneHit( ray& r, const uniform sphere_t* uniform scene, uniform unsigned int32 sceneSize, uniform float t_min, uniform float t_max, varying hit_info* uniform p_hit );
+static bool    _sphereHit( ray& r, const uniform sphere_t* uniform sphere, uniform unsigned int32 sphereID, uniform float t_min, float t_max, varying hit_info* uniform p_hit );
 
-static bool _materialScatter( ray& r, material_t& d, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
-static bool _diffuseScatter( ray& r, material_t& d, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
-static bool _metalScatter( ray& r, material_t& m, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
-static bool _glassScatter( ray& r, material_t& g, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
+static bool _materialScatter( ray& r, const uniform material_t* uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
+static bool _diffuseScatter( ray& r, const uniform material_t* uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
+static bool _metalScatter( ray& r, const uniform material_t* uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
+static bool _glassScatter( ray& r, const uniform material_t* uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered  );
 
 static vector3 _reflect( vector3& v, vector3& normal );
 static bool    _refract( vector3& v, vector3& normal, float ni_over_nt, varying vector3* uniform refracted );
@@ -217,7 +224,7 @@ export void cameraInitISPC( uniform RenderGangContext * uniform ctx )
 
 export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
 {
-    //print( "renderISPC: blockID % of %\n", ctx->blockID, ctx->totalBlocks );
+    //print( "renderISPC: blockID % of % scene % materials %\n", ctx->blockID, ctx->totalBlocks, ctx->scene, ctx->materials );
 
     for ( uniform int y = ctx->yOffset; y < ctx->yOffset + ctx->blockSize; y += 1 )
     {
@@ -237,11 +244,11 @@ export uniform bool renderISPC( uniform RenderGangContext * uniform ctx )
             for ( uniform unsigned int32 s = 0; s < ctx->num_aa_samples; s++ )
             {
                 float u = ((float)x) / ctx->cols;
-                float v = ((float)y) / ctx->rows;
+                uniform float v = ((float)y) / ctx->rows;
 
                 ray r = _cameraGetRay( u, v );
 
-                vector3 _sample  = _color( r, ctx->scene, ctx->sceneSize, ctx->max_ray_depth );
+                vector3 _sample  = _color( r, ctx->scene, ctx->materials, ctx->sceneSize, ctx->max_ray_depth );
                 //vector3 _sample = _background( r );
                 //vector3 _sample = _gradient( u, v );
                 //vector3 _sample = _randomColor( u, v );
@@ -332,11 +339,6 @@ static vector3 _sky( float u, float v )
     vector3 leftCorner = { -2, -1, -1 };
 
     ray r;
-    r.origin = s_camera.origin;
-//    r.direction.x = s_camera.leftCorner.x + u * s_camera.horizontal.x + v * s_camera.vertical.x;
-//    r.direction.y = s_camera.leftCorner.y + u * s_camera.horizontal.y + v * s_camera.vertical.y;
-//    r.direction.z = s_camera.leftCorner.z + u * s_camera.horizontal.z + v * s_camera.vertical.z;
-
     r.origin = origin;
     r.direction.x = leftCorner.x + u * horizontal.x + v * vertical.x;
     r.direction.y = leftCorner.y + u * horizontal.y + v * vertical.y;
@@ -355,18 +357,16 @@ static vector3 _sky( float u, float v )
 }
 
 
-static vector3 _color( ray& r, const sphere_t* scene, unsigned int32 sceneSize, unsigned int32 max_depth )
+static vector3 _color( ray& r, const uniform sphere_t* uniform scene, const uniform material_t* uniform materials, uniform unsigned int32 sceneSize, uniform unsigned int32 max_depth )
 {
     hit_info hit;
     vector3  attenuation;
     ray      scattered = r;
     vector3  color = { 1.0f, 1.0f, 1.0f };
 
-    for ( unsigned int32 i = 0; i < max_depth; i++ ) {
+    for ( uniform unsigned int32 i = 0; i < max_depth; i++ ) {
         if ( _sceneHit( scattered, scene, sceneSize, 0.001f, FLT_MAX, &hit ) ) {
 #if defined( NORMAL_SHADE )
-            //vector3 normal = ( r.point( hit.distance ) - vector3( 0, 0, -1 ) ).normalized();
-            //return 0.5f * vector3( normal.x + 1.0f, normal.y + 1.0f, normal.z + 1.0f );
             vector3 normal;
             vector3 p = _pointOnRay( r, hit.distance );
             normal.x = p.x - 0;
@@ -396,7 +396,7 @@ static vector3 _color( ray& r, const sphere_t* scene, unsigned int32 sceneSize, 
             color.y = color.y * 0.5f;
             color.z = color.z * 0.5f;
 #else
-            if ( _materialScatter( scattered, hit.material, hit, &attenuation, &scattered ) ) {
+            if ( _materialScatter( scattered, materials, hit.materialID, hit, &attenuation, &scattered ) ) {
                 color *= attenuation;
             } else {
                 break;
@@ -412,26 +412,18 @@ static vector3 _color( ray& r, const sphere_t* scene, unsigned int32 sceneSize, 
 }
 
 
-static bool _sphereHit( ray& r, const uniform sphere_t* varying sphere, float t_min, float t_max, varying hit_info* uniform p_hit )
+static bool _sphereHit( ray& r, const uniform sphere_t* uniform sphere, uniform unsigned int32 sphereID, uniform float t_min, float t_max, varying hit_info* uniform p_hit )
 {
     assert( p_hit );
     
-    //float center_x;
-    //float center_y;
-    //float center_z;
-    //aos_to_soa3(&sphere->center, &center_x, &center_y, &center_z);
-
     vector3 oc;
-    oc.x = r.origin.x - sphere->center[0];
-    oc.y = r.origin.y - sphere->center[1];
-    oc.z = r.origin.z - sphere->center[2];
-    //oc.x = r.origin.x - center_x;
-    //oc.y = r.origin.y - center_y;
-    //oc.z = r.origin.z - center_z;
+    oc.x = r.origin.x - sphere->center_x[sphereID];
+    oc.y = r.origin.y - sphere->center_y[sphereID];
+    oc.z = r.origin.z - sphere->center_z[sphereID];
 
     float   a  = _dot( r.direction, r.direction );
     float   b  = _dot( oc, r.direction );
-    float c = _dot( oc, oc ) - ( sphere->radius * sphere->radius );
+    float c = _dot( oc, oc ) - ( sphere->radius[sphereID] * sphere->radius[sphereID] );
 
     float discriminant = b * b - a * c;
 
@@ -440,10 +432,12 @@ static bool _sphereHit( ray& r, const uniform sphere_t* varying sphere, float t_
         if ( t < t_max && t > t_min ) {
             p_hit->distance = t;
             p_hit->point    = _pointOnRay( r, t );
-            p_hit->normal.x = ( p_hit->point.x - sphere->center[0] ) / sphere->radius;
-            p_hit->normal.y = ( p_hit->point.y - sphere->center[1] ) / sphere->radius;
-            p_hit->normal.z = ( p_hit->point.z - sphere->center[2] ) / sphere->radius;
-            p_hit->material = sphere->material;
+            p_hit->normal.x = ( p_hit->point.x - sphere->center_x[sphereID] ) / sphere->radius[sphereID];
+            p_hit->normal.y = ( p_hit->point.y - sphere->center_y[sphereID] ) / sphere->radius[sphereID];
+            p_hit->normal.z = ( p_hit->point.z - sphere->center_z[sphereID] ) / sphere->radius[sphereID];
+#ifdef MATERIAL_SHADE
+            p_hit->materialID = sphere->materialID[sphereID];
+#endif
             return true;
         }
 
@@ -451,10 +445,12 @@ static bool _sphereHit( ray& r, const uniform sphere_t* varying sphere, float t_
         if ( t < t_max && t > t_min ) {
             p_hit->distance = t;
             p_hit->point    = _pointOnRay( r, t );
-            p_hit->normal.x = ( p_hit->point.x - sphere->center[0] ) / sphere->radius;
-            p_hit->normal.y = ( p_hit->point.y - sphere->center[1] ) / sphere->radius;
-            p_hit->normal.z = ( p_hit->point.z - sphere->center[2] ) / sphere->radius;
-            p_hit->material = sphere->material;
+            p_hit->normal.x = ( p_hit->point.x - sphere->center_x[sphereID] ) / sphere->radius[sphereID];
+            p_hit->normal.y = ( p_hit->point.y - sphere->center_y[sphereID] ) / sphere->radius[sphereID];
+            p_hit->normal.z = ( p_hit->point.z - sphere->center_z[sphereID] ) / sphere->radius[sphereID];
+#ifdef MATERIAL_SHADE
+            p_hit->materialID = sphere->materialID[sphereID];
+#endif
             return true;
         }
     }
@@ -463,17 +459,15 @@ static bool _sphereHit( ray& r, const uniform sphere_t* varying sphere, float t_
 }
 
 
-static bool  _sceneHit( ray& r, const uniform sphere_t* varying scene, unsigned int32 sceneSize, float t_min, float t_max, varying hit_info* uniform p_hit )
+static bool  _sceneHit( ray& r, const uniform sphere_t* uniform scene, uniform unsigned int32 sceneSize, uniform float t_min, uniform float t_max, varying hit_info* uniform p_hit )
 {
     bool     rval         = false;
     float    closestSoFar = t_max;
     hit_info hit;
 
-    for ( int i = 0; i < sceneSize; i++ ) {
-        const sphere_t* sphere = &scene[ i ];
-
+    for ( uniform int i = 0; i < sceneSize; i++ ) {
         hit_info tmp;
-        if ( _sphereHit( r, sphere, t_min, closestSoFar, &tmp ) ) {
+        if ( _sphereHit( r, scene, i, t_min, closestSoFar, &tmp ) ) {
             rval         = true;
             closestSoFar = tmp.distance;
             hit          = tmp;
@@ -490,25 +484,25 @@ static bool  _sceneHit( ray& r, const uniform sphere_t* varying scene, unsigned 
 //
 
 
-static bool _materialScatter( ray& r, material_t& m, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
+static bool _materialScatter( ray& r, const uniform material_t * uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
 {
     bool rval = false;
 
-    switch ( m.type ) {
+    switch ( materials->type[materialID] ) {
         case MATERIAL_DIFFUSE:
-            rval = _diffuseScatter( r, m, hit, p_attenuation, p_scattered );
+            rval = _diffuseScatter( r, materials, materialID, hit, p_attenuation, p_scattered );
             break;
 
         case MATERIAL_METAL:
-            rval = _metalScatter( r, m, hit, p_attenuation, p_scattered );
+            rval = _metalScatter( r, materials, materialID, hit, p_attenuation, p_scattered );
             break;
 
         case MATERIAL_GLASS:
-            rval = _glassScatter( r, m, hit, p_attenuation, p_scattered );
+            rval = _glassScatter( r, materials, materialID, hit, p_attenuation, p_scattered );
             break;
 
         default:
-            //print("unknown material %d\n", m.type);
+            //print("unknown material %\n", materials->type[materialID]);
             assert( 0 );
     }
 
@@ -516,7 +510,7 @@ static bool _materialScatter( ray& r, material_t& m, hit_info& hit, varying vect
 }
 
 
-static bool _diffuseScatter( ray& r, material_t& d, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
+static bool _diffuseScatter( ray& r, const uniform material_t * uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
 {
     vector3 target    = hit.point + hit.normal;
     target = target + _randomInUnitSphere();
@@ -527,34 +521,34 @@ static bool _diffuseScatter( ray& r, material_t& d, hit_info& hit, varying vecto
     scatter.direction = target.xyz - hit_point.xyz;
 
     *p_scattered     = scatter;
-    p_attenuation->r = d.albedo[0];
-    p_attenuation->g = d.albedo[1];
-    p_attenuation->b = d.albedo[2];
+    p_attenuation->r = materials->albedo_r[materialID];
+    p_attenuation->g = materials->albedo_g[materialID];
+    p_attenuation->b = materials->albedo_b[materialID];
 
     return true;
 }
 
 
-static bool _metalScatter( ray& r, material_t& m, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
+static bool _metalScatter( ray& r, const uniform material_t * uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
 {
     vector3 direction = _normalize( r.direction );
     vector3 reflected = _reflect( direction, hit.normal );
 
     ray scatter;
     scatter.origin = hit.point;
-    scatter.direction = reflected.xyz + (m.blur * _randomInUnitSphere() );
+    scatter.direction = reflected.xyz + (materials->blur[materialID] * _randomInUnitSphere() );
 
     *p_scattered     = scatter;
-    p_attenuation->r = m.albedo[0];
-    p_attenuation->g = m.albedo[1];
-    p_attenuation->b = m.albedo[2];
+    p_attenuation->r = materials->albedo_r[materialID];
+    p_attenuation->g = materials->albedo_g[materialID];
+    p_attenuation->b = materials->albedo_b[materialID];
 
     float d = _dot( p_scattered->direction, hit.normal );
     return ( d > 0 );
 }
 
 
-static bool _glassScatter( ray& r, material_t& g, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
+static bool _glassScatter( ray& r, const uniform material_t * uniform materials, unsigned int32 materialID, hit_info& hit, varying vector3 * uniform p_attenuation, varying ray* uniform p_scattered )
 {
     vector3 outwardNormal;
     vector3 reflected = _reflect( r.direction, hit.normal );
@@ -570,16 +564,16 @@ static bool _glassScatter( ray& r, material_t& g, hit_info& hit, varying vector3
 
     if ( _dot( r.direction, hit.normal ) > 0 ) {
         outwardNormal = -hit.normal;
-        niOverNt      = g.refractionIndex;
-        cosine        = g.refractionIndex * _dot(r.direction, hit.normal ) / _length( r.direction );
+        niOverNt      = materials->refractionIndex[materialID];
+        cosine        = materials->refractionIndex[materialID] * _dot(r.direction, hit.normal ) / _length( r.direction );
     } else {
         outwardNormal = hit.normal;
-        niOverNt      = 1.0f / g.refractionIndex;
+        niOverNt      = 1.0f / materials->refractionIndex[materialID];
         cosine        = (-1 * _dot(r.direction, hit.normal ) ) / _length( r.direction );
     }
 
     if ( _refract( r.direction, outwardNormal, niOverNt, &refracted ) ) {
-        probability = _schlick( cosine, g.refractionIndex );
+        probability = _schlick( cosine, materials->refractionIndex[materialID] );
     } else {
         probability = 1.0f;
     }

@@ -49,6 +49,7 @@ struct RenderGangContext {
     float camera_lookat[3];
     float camera_focusDistance;
     const struct sphere_t * scene;
+    const struct material_t * materials;
     uint32_t sceneSize;
     uint32_t * framebuffer;
     uint32_t rows;
@@ -64,22 +65,26 @@ struct RenderGangContext {
 };
 #endif
 
-#ifndef __ISPC_STRUCT_material_t__
-#define __ISPC_STRUCT_material_t__
-struct material_t {
-    enum material_type_t type;
-    float albedo[3];
-    float blur;
-    float refractionIndex;
-};
-#endif
-
 #ifndef __ISPC_STRUCT_sphere_t__
 #define __ISPC_STRUCT_sphere_t__
 struct sphere_t {
-    float center[3];
-    float radius;
-    struct material_t material;
+    float * center_x;
+    float * center_y;
+    float * center_z;
+    float * radius;
+    uint32_t * materialID;
+};
+#endif
+
+#ifndef __ISPC_STRUCT_material_t__
+#define __ISPC_STRUCT_material_t__
+struct material_t {
+    enum material_type_t * type;
+    float * albedo_r;
+    float * albedo_g;
+    float * albedo_b;
+    float * blur;
+    float * refractionIndex;
 };
 #endif
 

@@ -14,21 +14,22 @@ namespace pk
 {
 
 typedef struct _RenderThreadContext {
-    const Camera*          camera;
-    const ispc::sphere_t*  scene;
-    uint32_t               sceneSize;
-    uint32_t*              framebuffer;
-    uint32_t               rows;
-    uint32_t               cols;
-    uint32_t               num_aa_samples;
-    uint32_t               max_ray_depth;
-    uint32_t               blockID;
-    uint32_t               blockSize;
-    uint32_t               xOffset;
-    uint32_t               yOffset;
-    std::atomic<uint32_t>* blockCount;
-    uint32_t               totalBlocks;
-    bool                   debug;
+    const Camera*           camera;
+    const ispc::sphere_t*   scene;
+    const ispc::material_t* materials;
+    uint32_t                sceneSize;
+    uint32_t*               framebuffer;
+    uint32_t                rows;
+    uint32_t                cols;
+    uint32_t                num_aa_samples;
+    uint32_t                max_ray_depth;
+    uint32_t                blockID;
+    uint32_t                blockSize;
+    uint32_t                xOffset;
+    uint32_t                yOffset;
+    std::atomic<uint32_t>*  blockCount;
+    uint32_t                totalBlocks;
+    bool                    debug;
 
     _RenderThreadContext() :
         scene( nullptr ),
@@ -60,32 +61,51 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
     printf( "Render %d x %d: blockSize %d x %d, %d blocks, [%d:%d] threads \n",
         cols, rows, blockSize, blockSize, numBlocks, tp, numThreads );
 
-    // Flatten the Scene object to an array of ispc::sphere_t
-    // TODO: convert to SoA
-    size_t          sceneSize = sizeof( ispc::sphere_t ) * scene.objects.size();
-    ispc::sphere_t* pScene    = (ispc::sphere_t*)new uint8_t[ sceneSize ];
-    //printf( "Allocated %zd bytes for %zd objects\n", sceneSize, scene.objects.size() );
+    // Flatten the Scene object to an SoA ispc::sphere_t
+    size_t sceneSize = sizeof( ispc::sphere_t ) * scene.objects.size();
 
-    ispc::sphere_t* p = pScene;
+    ispc::sphere_t _scene;
+    _scene.center_x   = new float[ sceneSize ];
+    _scene.center_y   = new float[ sceneSize ];
+    _scene.center_z   = new float[ sceneSize ];
+    _scene.radius     = new float[ sceneSize ];
+    _scene.materialID = new uint32_t[ sceneSize ];
+#ifdef MATERIAL_SHADE
+    //_scene.material = new ispc::material_t[sceneSize];
+    ispc::material_t _materials;
+    _materials.type            = new ispc::material_type_t[ sceneSize ];
+    _materials.albedo_r        = new float[ sceneSize ];
+    _materials.albedo_g        = new float[ sceneSize ];
+    _materials.albedo_b        = new float[ sceneSize ];
+    _materials.blur            = new float[ sceneSize ];
+    _materials.refractionIndex = new float[ sceneSize ];
+#endif
+
+    uint32_t sphereID   = 0;
+    uint32_t materialID = 0;
     for ( IVisible* obj : scene.objects ) {
-        Sphere*         s1 = dynamic_cast<Sphere*>( obj );
-        ispc::sphere_t* s2 = (ispc::sphere_t*)p;
+        Sphere* s1 = dynamic_cast<Sphere*>( obj );
 
-        s2->center[ 0 ] = s1->center.x;
-        s2->center[ 1 ] = s1->center.y;
-        s2->center[ 2 ] = s1->center.z;
-        s2->radius      = s1->radius;
+        _scene.center_x[ sphereID ] = s1->center.x;
+        _scene.center_y[ sphereID ] = s1->center.y;
+        _scene.center_z[ sphereID ] = s1->center.z;
+        _scene.radius[ sphereID ]   = s1->radius;
 
-        s2->material.type            = (ispc::material_type_t)s1->material->type;
-        s2->material.albedo[ 0 ]     = s1->material->albedo.r();
-        s2->material.albedo[ 1 ]     = s1->material->albedo.g();
-        s2->material.albedo[ 2 ]     = s1->material->albedo.b();
-        s2->material.blur            = s1->material->blur;
-        s2->material.refractionIndex = s1->material->refractionIndex;
+#ifdef MATERIAL_SHADE
+        _scene.materialID[ sphereID ] = materialID;
 
-        p++;
+        _materials.type[ materialID ]            = (ispc::material_type_t)s1->material->type;
+        _materials.albedo_r[ materialID ]        = s1->material->albedo.r();
+        _materials.albedo_g[ materialID ]        = s1->material->albedo.g();
+        _materials.albedo_b[ materialID ]        = s1->material->albedo.b();
+        _materials.blur[ materialID ]            = s1->material->blur;
+        _materials.refractionIndex[ materialID ] = s1->material->refractionIndex;
+        materialID++;
+#endif
+
+        sphereID++;
     }
-    printf( "Flattened %zd scene objects to ISPC array\n", scene.objects.size() );
+    printf( "Flattened %d scene objects and %d materials to ISPC array\n", sphereID, materialID );
 
     // Initialize the camera
     ispc::RenderGangContext ispc_ctx;
@@ -114,7 +134,8 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
         uint32_t xOffset = 0;
         for ( uint32_t x = 0; x < widthBlocks; x++ ) {
             RenderThreadContext* ctx = &contexts[ blockID ];
-            ctx->scene               = pScene;
+            ctx->scene               = &_scene;
+            ctx->materials           = &_materials;
             ctx->sceneSize           = (uint32_t)scene.objects.size();
             ctx->camera              = &camera;
             ctx->framebuffer         = framebuffer;
@@ -149,7 +170,13 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
 
     threadPoolDeinit( tp );
     delete[] contexts;
-    ///////delete[] pScene;
+    delete[] _scene.center_x;
+    delete[] _scene.center_y;
+    delete[] _scene.center_z;
+    delete[] _scene.radius;
+#ifdef MATERIAL_SHADE
+    delete[] _scene.materialID;
+#endif
 
     printf( "renderSceneISPC: %f s\n", t.ElapsedSeconds() );
 
@@ -167,6 +194,7 @@ static bool _renderJobISPC( void* context, uint32_t tid )
     ispc::RenderGangContext ispc_ctx;
 
     ispc_ctx.scene          = ctx->scene;
+    ispc_ctx.materials      = ctx->materials;
     ispc_ctx.sceneSize      = ctx->sceneSize;
     ispc_ctx.framebuffer    = ctx->framebuffer;
     ispc_ctx.blockID        = ctx->blockID;
