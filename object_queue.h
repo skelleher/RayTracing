@@ -113,7 +113,7 @@ obj_queue_t Queue<TYPE>::create( uint32_t queue_length, TYPE* queue_mem )
     std::lock_guard<std::mutex> lock( s_queues_mutex );
 
     for ( int i = 0; i < ARRAY_SIZE( s_queues ); i++ ) {
-        SpinLockGuard( s_queues[ i ].spinLock );
+        SpinLockGuard lock( s_queues[ i ].spinLock );
 
         if ( s_queues[ i ].msg_size == 0 ) {
             handle = (obj_queue_t)i;
@@ -141,7 +141,7 @@ result Queue<TYPE>::destroy( obj_queue_t queue )
         return R_FAIL;
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
 
     p_queue->head     = nullptr;
     p_queue->tail     = nullptr;
@@ -162,7 +162,7 @@ result Queue<TYPE>::send( obj_queue_t queue, const TYPE* msg )
         return R_FAIL;
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
 
     if ( _queue_is_full( queue ) )
         return R_FAIL;
@@ -304,7 +304,7 @@ result Queue<TYPE>::notifySender( obj_queue_t queue, result rval )
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
 
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
     p_queue->response_rval = rval;
     p_queue->response.notify_one();
 
@@ -320,7 +320,7 @@ result Queue<TYPE>::notify( obj_queue_t queue )
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
 
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
     p_queue->notified = true;
     p_queue->notification.notify_one();
 
@@ -336,7 +336,7 @@ result Queue<TYPE>::notifyAll( obj_queue_t queue )
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
 
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
     p_queue->notification.notify_all();
 
     return R_OK;
@@ -351,7 +351,7 @@ size_t Queue<TYPE>::size( obj_queue_t queue )
 
     _obj_queue_t* p_queue = &s_queues[ queue ];
 
-    SpinLockGuard( p_queue->spinLock );
+    SpinLockGuard lock( p_queue->spinLock );
     return p_queue->used;
 }
 
@@ -411,12 +411,6 @@ template<class TYPE>
 bool Queue<TYPE>::_queue_is_full( obj_queue_t queue )
 {
     return s_queues[ queue ].used >= s_queues[ queue ].length;
-    //_obj_queue_t* p_queue = &s_queues[queue];
-    //p_queue->spinLock.lock();
-    //bool rval = p_queue->used > p_queue->length;
-    //p_queue->spinLock.release();
-
-    //return rval;
 }
 
 
@@ -424,12 +418,6 @@ template<class TYPE>
 bool Queue<TYPE>::_queue_is_empty( obj_queue_t queue )
 {
     return s_queues[ queue ].used == 0;
-    //_obj_queue_t* p_queue = &s_queues[queue];
-    //p_queue->spinLock.lock();
-    //bool rval = p_queue->used == 0;
-    //p_queue->spinLock.release();
-
-    //return rval;
 }
 
 

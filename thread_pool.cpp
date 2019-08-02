@@ -125,7 +125,7 @@ thread_pool_t threadPoolInit( uint32_t numThreads )
     std::lock_guard<std::mutex> lock( s_pools_mutex );
 
     for ( int i = 0; i < ARRAY_SIZE( s_pools ); i++ ) {
-        SpinLockGuard( s_pools[ i ].spinLock );
+        SpinLockGuard lock( s_pools[ i ].spinLock );
 
         if ( s_pools[ i ].hPool == INVALID_THREAD_POOL ) {
             tp        = &s_pools[ i ];
