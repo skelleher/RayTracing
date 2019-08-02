@@ -25,6 +25,12 @@ public:
         //assert(_lock);
         _lock.clear( std::memory_order_release );
     }
+
+    SpinLock& operator=( const SpinLock& rhs)
+    {
+        // do nothing; cannot assign or copy std::atomic_flag
+        return *this;
+    }
 };
 
 
