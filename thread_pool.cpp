@@ -115,7 +115,7 @@ static bool _calledFromWorkerThread( thread_pool_t pool );
 // Public
 //
 
-thread_pool_t threadPoolInit( uint32_t numThreads )
+thread_pool_t threadPoolCreate( uint32_t numThreads )
 {
     assert( numThreads );
 
@@ -258,7 +258,7 @@ result threadPoolWaitForJobs( job_group_t group, uint32_t timeout_ms, thread_poo
 }
 
 
-bool threadPoolDeinit( thread_pool_t pool )
+bool threadPoolDestroy( thread_pool_t pool )
 {
     if ( !_valid( pool ) )
         return false;

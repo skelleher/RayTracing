@@ -91,12 +91,12 @@ typedef enum {
 } thread_pool_blocking_t;
 
 
-thread_pool_t threadPoolInit( uint32_t numThreads );
+thread_pool_t threadPoolCreate( uint32_t numThreads );
 job_t         threadPoolSubmitJob( const Invokable& job, thread_pool_t pool = DEFAULT_THREAD_POOL, thread_pool_blocking_t blocking = THREAD_POOL_SUBMIT_BLOCKING );
 job_group_t   threadPoolSubmitJobs( const Invokable* jobs, size_t numJobs, thread_pool_t pool = DEFAULT_THREAD_POOL, thread_pool_blocking_t blocking = THREAD_POOL_SUBMIT_BLOCKING );
 result        threadPoolWaitForJob( job_t, uint32_t timeout_ms = INFINITE_TIMEOUT, thread_pool_t pool = DEFAULT_THREAD_POOL );
 result        threadPoolWaitForJobs( job_group_t, uint32_t timeout_ms = INFINITE_TIMEOUT, thread_pool_t pool = DEFAULT_THREAD_POOL );
-bool          threadPoolDeinit( thread_pool_t pool );
+bool          threadPoolDestroy( thread_pool_t pool );
 
 void testThreadPool();
 

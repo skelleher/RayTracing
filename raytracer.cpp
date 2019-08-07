@@ -66,7 +66,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     uint32_t      widthBlocks  = uint32_t( float( cols / blockSize ) ) + 1;
     uint32_t      heightBlocks = uint32_t( float( rows / blockSize ) ) + 1;
     uint32_t      numBlocks    = heightBlocks * widthBlocks;
-    thread_pool_t tp           = threadPoolInit( numThreads );
+    thread_pool_t tp           = threadPoolCreate( numThreads );
 
     printf( "Render %d x %d: blockSize %d x %d, %d blocks, [%d:%d] threads \n",
         cols, rows, blockSize, blockSize, numBlocks, tp, numThreads );
@@ -133,7 +133,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     }
     printf( "\n" );
 
-    threadPoolDeinit( tp );
+    threadPoolDestroy( tp );
     delete[] contexts;
     //delete[] pScene;
 

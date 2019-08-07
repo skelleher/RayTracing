@@ -117,7 +117,7 @@ void testThreadPool()
     int        numBlocks   = numElements / blockSize;
     TestObject obj;
 
-    thread_pool_t tp = threadPoolInit( numThreads );
+    thread_pool_t tp = threadPoolCreate( numThreads );
 
     int* array1 = new int[ numElements ];
     int* array2 = new int[ numElements ];
@@ -189,7 +189,7 @@ void testThreadPool()
         assert( error == 0 );
     }
 
-    threadPoolDeinit( tp );
+    threadPoolDestroy( tp );
 
     delete[] jobs;
     delete[] array1;

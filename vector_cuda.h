@@ -19,17 +19,12 @@ public:
 
     __host__ __device__ ~vector3() {}
 
-    //__host__ __device__ inline float x() const { return x; }
-    //__host__ __device__ inline float y() const { return y; }
-    //__host__ __device__ inline float z() const { return z; }
     __host__ __device__ inline float r() const { return x; }
     __host__ __device__ inline float g() const { return y; }
     __host__ __device__ inline float b() const { return z; }
 
     __host__ __device__ inline const vector3 &operator+() const { return *this; }
     __host__ __device__ inline vector3 operator-() const { return vector3( -x, -y, -z ); }
-    //__host__ __device__ inline float operator[]( int i ) const { return e[ i ]; }
-    //__host__ __device__ inline float &operator[]( int i ) { return e[ i ]; };
 
     __host__ __device__ inline vector3 &operator+=( const vector3 &v2 );
     __host__ __device__ inline vector3 &operator-=( const vector3 &v2 );
@@ -40,7 +35,6 @@ public:
 
     __host__ __device__ inline float length() const { return sqrt( x * x + y * y + z * z ); }
     __host__ __device__ inline float squared_length() const { return x * x + y * y + z * z; }
-    //__host__ __device__ inline void make_unit_vector();
 
     __host__ __device__ inline vector3 normalized() const
     {
@@ -87,14 +81,6 @@ inline std::ostream &operator<<( std::ostream &os, const vector3 &t )
     os << t.x << " " << t.y << " " << t.z;
     return os;
 }
-
-//__host__ __device__ inline void vector3::make_unit_vector()
-//{
-//    float k = 1.0f / sqrt( x * x + y * y + z * z );
-//    x *= k;
-//    y *= k;
-//    z *= k;
-//}
 
 __host__ __device__ inline vector3 operator+( const vector3 &v1, const vector3 &v2 )
 {
