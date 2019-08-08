@@ -104,7 +104,13 @@ int main( int argc, char** argv )
         const std::string& arg = args.getCmdOption( "-g" );
         preferredDevice        = std::stoi( arg );
     }
-    testCompute( preferredDevice );
+
+    bool enableValidation = false;
+    if ( args.cmdOptionExists( "-v" ) ) {
+        enableValidation = true;
+    }
+    testCompute( preferredDevice, enableValidation );
+    return 0;
 
     //
     // Define the scene and camera

@@ -21,6 +21,14 @@ static const uint32_t COMPUTE_OUTPUT_DEPTH       = 1;
 static const size_t   COMPUTE_OUTPUT_BUFFER_SIZE = COMPUTE_OUTPUT_WIDTH * COMPUTE_OUTPUT_HEIGHT * 4 * sizeof( float );
 static const char*    DEFAULT_SHADER_PATH        = "shaders\\test_vulkan.spv";
 
+// Shader-specific
+struct UniformBufferObject {
+    uint32_t outputWidth;
+    uint32_t outputHeight;
+    uint32_t maxIterations;
+};
+static const uint32_t COMPUTE_UNIFORM_BUFFER_SIZE = sizeof( UniformBufferObject );
+
 
 //
 // Based on https://github.com/Erkaman/vulkan_minimal_compute
@@ -100,11 +108,16 @@ struct _computeInstance {
     uint32_t workgroupHeight;
     uint32_t workgroupDepth;
 
+    // Uniform input(s) to the compute shader
+    VkBuffer       uniformBuffer;
+    VkDeviceMemory uniformBufferMemory;
+    uint32_t       uniformBufferSize;
+
     // The compute shader output will be written to this buffer.
     // There is both a buffer handle and buffer backign store.
-    VkBuffer       buffer;
-    VkDeviceMemory bufferMemory;
-    uint32_t       bufferSize;
+    VkBuffer       outputBuffer;
+    VkDeviceMemory outputBufferMemory;
+    uint32_t       outputBufferSize;
 
     // Descriptors represent resources in shaders. They allow us to use things like
     // uniform buffers, storage buffers and images in GLSL.
@@ -151,7 +164,7 @@ static bool _createCommandBuffer( _computeInstance* cp );
 static bool _executeJobs( _computeInstance* cp, uint32_t timeoutMS );
 
 // TODO: these are specific to the job, not the device
-static bool _createBuffer( size_t bufferSize, _computeInstance* cp );
+static bool _createBuffer( _computeInstance* cp, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties );
 static bool _createDescriptorSetLayout( _computeInstance* cp );
 static bool _createDescriptorSet( _computeInstance* cp );
 static bool _createComputePipeline( const std::string& shaderPath, _computeInstance* cp );
@@ -285,7 +298,12 @@ static bool _initComputeInstance( _computeInstance* cp, uint32_t preferredDevice
     _createLogicalDevice( cp );
 
     // TODO: these are specific to the job, not the device
-    _createBuffer( COMPUTE_OUTPUT_BUFFER_SIZE, cp );
+    _createBuffer( cp, COMPUTE_OUTPUT_BUFFER_SIZE, &cp->outputBuffer, &cp->outputBufferMemory, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+    cp->outputBufferSize = COMPUTE_OUTPUT_BUFFER_SIZE;
+
+    _createBuffer( cp, COMPUTE_UNIFORM_BUFFER_SIZE, &cp->uniformBuffer, &cp->uniformBufferMemory, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+    cp->uniformBufferSize = COMPUTE_UNIFORM_BUFFER_SIZE;
+
     _createDescriptorSetLayout( cp );
     _createDescriptorSet( cp );
     _createComputePipeline( DEFAULT_SHADER_PATH, cp );
@@ -308,8 +326,10 @@ static bool _destroyComputeInstance( _computeInstance* cp )
         func( cp->instance, cp->debugReportCallback, nullptr );
     }
 
-    vkFreeMemory( cp->device, cp->bufferMemory, nullptr );
-    vkDestroyBuffer( cp->device, cp->buffer, nullptr );
+    vkFreeMemory( cp->device, cp->outputBufferMemory, nullptr );
+    vkDestroyBuffer( cp->device, cp->outputBuffer, nullptr );
+    vkFreeMemory( cp->device, cp->uniformBufferMemory, nullptr );
+    vkDestroyBuffer( cp->device, cp->uniformBuffer, nullptr );
     vkDestroyShaderModule( cp->device, cp->computeShaderModule, nullptr );
     vkDestroyDescriptorPool( cp->device, cp->descriptorPool, nullptr );
     vkDestroyDescriptorSetLayout( cp->device, cp->descriptorSetLayout, nullptr );
@@ -524,9 +544,9 @@ static uint32_t _findMemoryType( _computeInstance* cp, uint32_t type, VkMemoryPr
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
     vkGetPhysicalDeviceMemoryProperties( cp->physicalDevice, &memoryProperties );
 
-    for ( uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++ ) {
-        printf( "Compute[%d]: memory type[%d]: 0x%x\n", cp->hCompute, i, memoryProperties.memoryTypes[ i ].propertyFlags );
-    }
+    //for ( uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++ ) {
+    //    printf( "Compute[%d]: memory type[%d]: 0x%x\n", cp->hCompute, i, memoryProperties.memoryTypes[ i ].propertyFlags );
+    //}
 
     for ( uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++ ) {
         if ( type & ( 1 << i ) && ( memoryProperties.memoryTypes[ i ].propertyFlags & properties ) == properties ) {
@@ -570,29 +590,28 @@ static bool _createLogicalDevice( _computeInstance* cp )
 }
 
 // TODO: this is shader-specific
-static bool _createBuffer( size_t bufferSize, _computeInstance* cp ) // TODO: compute_job_t job
+static bool _createBuffer( _computeInstance* cp, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties ) // TODO: compute_job_t job
 {
     VkBufferCreateInfo bufferCreateInfo = {};
     bufferCreateInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferCreateInfo.size               = bufferSize;
-    bufferCreateInfo.usage              = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // TODO: parameterize
-    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;          // TODO: parameterize
+    bufferCreateInfo.usage              = usage;
+    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
 
-    CHECK_VK( vkCreateBuffer( cp->device, &bufferCreateInfo, nullptr, &cp->buffer ) );
+    CHECK_VK( vkCreateBuffer( cp->device, &bufferCreateInfo, nullptr, pBuffer ) );
 
     VkMemoryRequirements memoryRequirements = {};
-    vkGetBufferMemoryRequirements( cp->device, cp->buffer, &memoryRequirements );
+    vkGetBufferMemoryRequirements( cp->device, *pBuffer, &memoryRequirements );
 
     VkMemoryAllocateInfo allocateInfo = {};
     allocateInfo.sType                = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocateInfo.allocationSize       = memoryRequirements.size;
-    allocateInfo.memoryTypeIndex      = _findMemoryType( cp, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+    allocateInfo.memoryTypeIndex      = _findMemoryType( cp, memoryRequirements.memoryTypeBits, properties );
 
-    CHECK_VK( vkAllocateMemory( cp->device, &allocateInfo, nullptr, &cp->bufferMemory ) );
-    CHECK_VK( vkBindBufferMemory( cp->device, cp->buffer, cp->bufferMemory, 0 ) );
-    cp->bufferSize = (uint32_t)bufferSize;
+    CHECK_VK( vkAllocateMemory( cp->device, &allocateInfo, nullptr, pBufferMemory ) );
+    CHECK_VK( vkBindBufferMemory( cp->device, *pBuffer, *pBufferMemory, 0 ) );
 
-    printf( "Compute[%d]: allocated %zd bytes of storage buffer\n", cp->hCompute, bufferSize );
+    printf( "Compute[%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", cp->hCompute, bufferSize, usage, properties );
 
     return true;
 }
@@ -601,19 +620,29 @@ static bool _createBuffer( size_t bufferSize, _computeInstance* cp ) // TODO: co
 // TODO: this is shader-specific
 static bool _createDescriptorSetLayout( _computeInstance* cp ) // TODO: compute_job_t job
 {
-    // Define descriptors for shader resources
-    // (in this case, a single handle to a storage buffer)
+    // Define the layout of shader resources
 
-    VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {};
-    descriptorSetLayoutBinding.binding                      = 0;
-    descriptorSetLayoutBinding.descriptorType               = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // or UNIFORM or SAMPLER or ...
-    descriptorSetLayoutBinding.descriptorCount              = 1;
-    descriptorSetLayoutBinding.stageFlags                   = VK_SHADER_STAGE_COMPUTE_BIT;
+    VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+    uboLayoutBinding.binding                      = 0;
+    uboLayoutBinding.descriptorType               = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount              = 1;
+    uboLayoutBinding.stageFlags                   = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutBinding storageLayoutBinding = {};
+    storageLayoutBinding.binding                      = 1;
+    storageLayoutBinding.descriptorType               = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    storageLayoutBinding.descriptorCount              = 1;
+    storageLayoutBinding.stageFlags                   = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutBinding bindings[] = {
+        uboLayoutBinding,
+        storageLayoutBinding
+    };
 
     VkDescriptorSetLayoutCreateInfo createInfo = {};
     createInfo.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    createInfo.bindingCount                    = 1;
-    createInfo.pBindings                       = &descriptorSetLayoutBinding;
+    createInfo.bindingCount                    = ARRAY_SIZE( bindings );
+    createInfo.pBindings                       = bindings;
 
     CHECK_VK( vkCreateDescriptorSetLayout( cp->device, &createInfo, nullptr, &cp->descriptorSetLayout ) );
     printf( "Compute[%d]: defined %d descriptors\n", cp->hCompute, createInfo.bindingCount );
@@ -622,51 +651,76 @@ static bool _createDescriptorSetLayout( _computeInstance* cp ) // TODO: compute_
 }
 
 
-// TODO: this is shader-specific
+// TODO: this is largely shader-specific; we /could/ allocate generic descriptor pools in the compute instance,
+// but defer descriptor sets and binding to each job.
 static bool _createDescriptorSet( _computeInstance* cp ) // TODO: compute_job_t job
 {
     bool rval = false;
 
-    // Bind descriptors to shader resources
-    // (in this case, a single handle to a storage buffer)
+    // Allocate descriptor pools
 
+    VkDescriptorPoolSize storageBufferPoolSize = {};
+    storageBufferPoolSize.type                 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    storageBufferPoolSize.descriptorCount      = 1;
 
-    unsigned int numDescriptors = 1;
+    VkDescriptorPoolSize uniformBufferPoolSize = {};
+    uniformBufferPoolSize.type                 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uniformBufferPoolSize.descriptorCount      = 1;
 
-    VkDescriptorPoolSize poolSize = {};
-    poolSize.type                 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount      = 1;
+    VkDescriptorPoolSize poolSizes[] = {
+        storageBufferPoolSize,
+        uniformBufferPoolSize
+    };
 
-    VkDescriptorPoolCreateInfo createInfo = {};
-    createInfo.sType                      = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    createInfo.maxSets                    = 1;
-    createInfo.poolSizeCount              = 1;
-    createInfo.pPoolSizes                 = &poolSize;
+    VkDescriptorPoolCreateInfo createDescriptorPoolInfo = {};
+    createDescriptorPoolInfo.sType                      = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    createDescriptorPoolInfo.maxSets                    = 2;
+    createDescriptorPoolInfo.poolSizeCount              = ARRAY_SIZE( poolSizes );
+    createDescriptorPoolInfo.pPoolSizes                 = poolSizes;
 
-    CHECK_VK( vkCreateDescriptorPool( cp->device, &createInfo, nullptr, &cp->descriptorPool ) );
+    CHECK_VK( vkCreateDescriptorPool( cp->device, &createDescriptorPoolInfo, nullptr, &cp->descriptorPool ) );
+    printf( "Compute[%d]: created %d descriptor pools\n", cp->hCompute, createDescriptorPoolInfo.poolSizeCount );
+
+    // Bind descriptors to buffers
 
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool              = cp->descriptorPool;
-    allocInfo.descriptorSetCount          = numDescriptors;
+    allocInfo.descriptorSetCount          = 1;
     allocInfo.pSetLayouts                 = &cp->descriptorSetLayout;
 
     CHECK_VK( vkAllocateDescriptorSets( cp->device, &allocInfo, &cp->descriptorSet ) );
+    printf( "Compute[%d]: created %d descriptor sets\n", cp->hCompute, allocInfo.descriptorSetCount );
 
-    VkDescriptorBufferInfo descriptorBufferInfo = {};
-    descriptorBufferInfo.buffer                 = cp->buffer;
-    descriptorBufferInfo.offset                 = 0;
-    descriptorBufferInfo.range                  = cp->bufferSize;
+    unsigned int           numDescriptors              = 2; // shader-specific
+    VkDescriptorBufferInfo descriptorUniformBufferInfo = {};
+    descriptorUniformBufferInfo.buffer                 = cp->uniformBuffer;
+    descriptorUniformBufferInfo.offset                 = 0;
+    descriptorUniformBufferInfo.range                  = cp->uniformBufferSize;
 
-    VkWriteDescriptorSet writeSet = {};
-    writeSet.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeSet.dstSet               = cp->descriptorSet;
-    writeSet.dstBinding           = 0;
-    writeSet.descriptorCount      = 1;
-    writeSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writeSet.pBufferInfo          = &descriptorBufferInfo;
+    VkDescriptorBufferInfo descriptorStorageBufferInfo = {};
+    descriptorStorageBufferInfo.buffer                 = cp->outputBuffer;
+    descriptorStorageBufferInfo.offset                 = 0;
+    descriptorStorageBufferInfo.range                  = cp->outputBufferSize;
 
-    vkUpdateDescriptorSets( cp->device, 1, &writeSet, 0, nullptr );
+    VkWriteDescriptorSet writeUniformSet = {};
+    writeUniformSet.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeUniformSet.dstSet               = cp->descriptorSet;
+    writeUniformSet.dstBinding           = 0;
+    writeUniformSet.descriptorCount      = 1;
+    writeUniformSet.descriptorType       = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writeUniformSet.pBufferInfo          = &descriptorUniformBufferInfo;
+    vkUpdateDescriptorSets( cp->device, 1, &writeUniformSet, 0, nullptr );
+
+    VkWriteDescriptorSet writeStorageSet = {};
+    writeStorageSet.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeStorageSet.dstSet               = cp->descriptorSet;
+    writeStorageSet.dstBinding           = 1;
+    writeStorageSet.descriptorCount      = 1;
+    writeStorageSet.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writeStorageSet.pBufferInfo          = &descriptorStorageBufferInfo;
+    vkUpdateDescriptorSets( cp->device, 1, &writeStorageSet, 0, nullptr );
+
     printf( "Compute[%d]: bound %d descriptors\n", cp->hCompute, numDescriptors );
 
     return true;
@@ -781,13 +835,26 @@ static bool _executeJobs( _computeInstance* cp, uint32_t timeoutMS )
     PerfTimer timer;
     printf( "Compute[%d]: execute...\n", cp->hCompute );
 
+    // Update uniform buffer(s)
+    // TODO: push constants is faster than map/unmap
+    {
+        struct UniformBufferObject ubo;
+        ubo.outputHeight  = COMPUTE_OUTPUT_HEIGHT;
+        ubo.outputWidth   = COMPUTE_OUTPUT_WIDTH;
+        ubo.maxIterations = 128;
+
+        void* data;
+        vkMapMemory( cp->device, cp->uniformBufferMemory, 0, sizeof( ubo ), 0, &data );
+        memcpy( data, &ubo, sizeof( ubo ) );
+        vkUnmapMemory( cp->device, cp->uniformBufferMemory );
+    }
+
     VkSubmitInfo submitInfo       = {};
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &cp->commandBuffer;
 
-    // TODO: do this once per job
-    //VkFence           fence;
+    // TODO: do this once per job at creation time
     VkFenceCreateInfo fenceCreateInfo = {};
     fenceCreateInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceCreateInfo.flags             = 0;
@@ -806,7 +873,7 @@ static bool _executeJobs( _computeInstance* cp, uint32_t timeoutMS )
     // TEST: save output of mandelbrot
     {
         void* mappedMemory = nullptr;
-        vkMapMemory( cp->device, cp->bufferMemory, 0, cp->bufferSize, 0, &mappedMemory );
+        vkMapMemory( cp->device, cp->outputBufferMemory, 0, cp->outputBufferSize, 0, &mappedMemory );
 
         struct Pixel {
             float r;
@@ -844,7 +911,7 @@ static bool _executeJobs( _computeInstance* cp, uint32_t timeoutMS )
         fflush( file );
         fclose( file );
 
-        vkUnmapMemory( cp->device, cp->bufferMemory );
+        vkUnmapMemory( cp->device, cp->outputBufferMemory );
     }
 
     return true;

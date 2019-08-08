@@ -13,9 +13,11 @@ typedef uint32_t compute_job_t;
 #define DEFAULT_COMPUTE_INSTANCE ( compute_t( 0 ) )
 #define INVALID_COMPUTE_JOB ( compute_job_t )( -1 )
 
-// TODO: create resources to bind to a job: storage buffers, uniforms, samplers, shaders, etc.
-// TODO: once a compute instnace is created and jobs are submitted, need to finalize all the resources
-
+// TODO: each job should have a function for:
+// create (load shader; define, allocate, and bind buffers and descriptor sets)
+// pre-submit (update uniforms)
+// post-submit (do something with output, e.g. copy to CPU or pass to next compute job)
+// destroy (clean up resources)
 typedef struct
 {
     const char* shaderPath;

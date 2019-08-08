@@ -7,16 +7,13 @@
 namespace pk
 {
 
-void testCompute( uint32_t preferredDevice )
+void testCompute( uint32_t preferredDevice, bool enableValidation )
 {
     result    rval;
     compute_t instances[ 1 ] = {};
 
     // Test creation / destruction of multiple instances
     for ( int i = 0; i < ARRAY_SIZE( instances ); i++ ) {
-        //bool enableValidation = true;
-        bool enableValidation = false;
-
         instances[ i ] = computeCreate( preferredDevice, enableValidation );
         assert(instances[i] != INVALID_COMPUTE_INSTANCE);
     }
