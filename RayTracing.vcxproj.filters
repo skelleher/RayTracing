@@ -75,6 +75,9 @@
     <ClInclude Include="msg_queue.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="compute.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -98,20 +101,26 @@
     <ClCompile Include="thread_pool.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="raytracerispc.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="msg_queue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="thread_pool_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="raytracer_vulkan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="raytracer_simd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compute_vulkan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compute_tests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="raytracer.cu">
-      <Filter>Source Files</Filter>
-    </CudaCompile>
     <CudaCompile Include="material.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
@@ -119,6 +128,9 @@
       <Filter>Source Files</Filter>
     </CudaCompile>
     <CudaCompile Include="utils.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="raytracer_cuda.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
   </ItemGroup>
@@ -129,5 +141,10 @@
     <CustomBuild Include="raytracer.ispc">
       <Filter>Source Files</Filter>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\test_vulkan.comp">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

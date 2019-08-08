@@ -83,7 +83,7 @@ void testCPUThreaded()
 {
     printf( "Threaded: %d blocks of %d\n", NUM_BLOCKS, BLOCK_SIZE );
 
-    thread_pool_t     tp       = threadPoolInit( 4 );
+    thread_pool_t     tp       = threadPoolCreate( 4 );
     thread_context_t* contexts = new thread_context_t[ NUM_BLOCKS ];
 
     PerfTimer t;
@@ -128,7 +128,7 @@ void testCPUThreaded()
     delete[] y;
 
     printf( "Elapsed ms: %d\n\n", (uint32_t)t.ElapsedMilliseconds() );
-    threadPoolDeinit( tp );
+    threadPoolDestroy( tp );
 }
 
 

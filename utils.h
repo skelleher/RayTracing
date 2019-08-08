@@ -66,6 +66,18 @@ void check_cuda( cudaError_t result, char const* const function, const char* con
 #define CHECK_CUDA( x ) ( x )
 #endif
 
+#ifndef SHIP_BUILD
+#define CHECK_VK( f )                                                             \
+    {                                                                             \
+        VkResult res = ( f );                                                     \
+        if ( res != VK_SUCCESS ) {                                                \
+            printf( "CHECK_VK [%s:%d] VkResult: %d\n", __FILE__, __LINE__, res ); \
+            DEBUG_BREAK();                                                        \
+        }                                                                         \
+    }
+#else
+#define CHECK_VK( x ) ( x )
+#endif
 
 #define M_PI 3.14159265358979323846f
 #define RADIANS( x ) ( (x)*M_PI / 180.0f )

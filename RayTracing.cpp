@@ -99,6 +99,12 @@ int main( int argc, char** argv )
         numThreads             = std::stoi( arg );
     }
 
+    int preferredDevice = 0;
+    if ( args.cmdOptionExists( "-g" ) ) {
+        const std::string& arg = args.getCmdOption( "-g" );
+        preferredDevice        = std::stoi( arg );
+    }
+    testCompute( preferredDevice );
 
     //
     // Define the scene and camera
