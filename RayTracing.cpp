@@ -109,8 +109,6 @@ int main( int argc, char** argv )
     if ( args.cmdOptionExists( "-v" ) ) {
         enableValidation = true;
     }
-    testCompute( preferredDevice, enableValidation );
-    return 0;
 
     //
     // Define the scene and camera
