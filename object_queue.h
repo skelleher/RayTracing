@@ -36,14 +36,14 @@ class Queue {
 public:
     static obj_queue_t create( uint32_t queue_length, TYPE* queue_mem );
     static result      destroy( obj_queue_t queue );
-    static result      send( obj_queue_t queue, const TYPE* msg );
-    static result      sendBlocking( obj_queue_t queue, const TYPE* msg, uint32_t timeout_ms = ( std::numeric_limits<uint32_t>::max )() );
-    static result      sendAndWaitForResponse( obj_queue_t queue, const TYPE* msg );
+    static result      send( obj_queue_t queue, TYPE* msg );
+    static result      sendBlocking( obj_queue_t queue, TYPE* msg, uint32_t timeout_ms = ( std::numeric_limits<uint32_t>::max )() );
+    static result      sendAndWaitForResponse( obj_queue_t queue, TYPE* msg );
     static result      receive( obj_queue_t queue, TYPE* p_msg, size_t msg_size, unsigned int timeout_ms = ( std::numeric_limits<unsigned int>::max )() );
     static result      notifySender( obj_queue_t queue, result rval );
     static result      notify( obj_queue_t queue );
     static result      notifyAll( obj_queue_t queue );
-    static size_t      size( obj_queue_t queue );
+    static uint32_t    size( obj_queue_t queue );
 
 private:
     typedef struct _obj_queue {
@@ -156,7 +156,7 @@ result Queue<TYPE>::destroy( obj_queue_t queue )
 
 
 template<class TYPE>
-result Queue<TYPE>::send( obj_queue_t queue, const TYPE* msg )
+result Queue<TYPE>::send( obj_queue_t queue, TYPE* msg )
 {
     if ( !_valid( queue ) )
         return R_FAIL;
@@ -177,7 +177,7 @@ result Queue<TYPE>::send( obj_queue_t queue, const TYPE* msg )
 
 
 template<class TYPE>
-result Queue<TYPE>::sendBlocking( obj_queue_t queue, const TYPE* msg, uint32_t timeout_ms )
+result Queue<TYPE>::sendBlocking( obj_queue_t queue, TYPE* msg, uint32_t timeout_ms )
 {
     if ( !_valid( queue ) )
         return R_FAIL;
@@ -215,7 +215,7 @@ result Queue<TYPE>::sendBlocking( obj_queue_t queue, const TYPE* msg, uint32_t t
 
 // TODO: we should also implement the blocking flavor of this
 template<class TYPE>
-result Queue<TYPE>::sendAndWaitForResponse( obj_queue_t queue, const TYPE* msg )
+result Queue<TYPE>::sendAndWaitForResponse( obj_queue_t queue, TYPE* msg )
 {
     if ( !_valid( queue ) )
         return R_FAIL;
@@ -344,7 +344,7 @@ result Queue<TYPE>::notifyAll( obj_queue_t queue )
 
 
 template<class TYPE>
-size_t Queue<TYPE>::size( obj_queue_t queue )
+uint32_t Queue<TYPE>::size( obj_queue_t queue )
 {
     if ( !_valid( queue ) )
         return R_FAIL;

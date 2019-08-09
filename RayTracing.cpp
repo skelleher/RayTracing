@@ -99,7 +99,7 @@ int main( int argc, char** argv )
         numThreads             = std::stoi( arg );
     }
 
-    int preferredDevice = 0;
+    int preferredDevice = -1;
     if ( args.cmdOptionExists( "-g" ) ) {
         const std::string& arg = args.getCmdOption( "-g" );
         preferredDevice        = std::stoi( arg );
@@ -109,6 +109,13 @@ int main( int argc, char** argv )
     if ( args.cmdOptionExists( "-v" ) ) {
         enableValidation = true;
     }
+
+    //
+    // Enable multi-threaded job system
+    //
+    thread_pool_t tp = threadPoolCreate( numThreads );
+    printf( "Created [%d:%d] threads\n", tp, numThreads );
+
     testCompute( preferredDevice, enableValidation );
     return 0;
 
@@ -151,11 +158,11 @@ int main( int argc, char** argv )
     }
 
     if ( cuda ) {
-        renderSceneCUDA( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, numThreads, blockSize, debug, recursive );
+        renderSceneCUDA( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
     } else if ( ispc ) {
-        renderSceneISPC( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, numThreads, blockSize, debug, recursive );
+        renderSceneISPC( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
     } else {
-        renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, numThreads, blockSize, debug, recursive );
+        renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
     }
 
     //
@@ -187,6 +194,8 @@ int main( int argc, char** argv )
     } else {
         delete[] frameBuffer;
     }
+
+    threadPoolDestroy( tp );
 
     return 0;
 }

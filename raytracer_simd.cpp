@@ -47,7 +47,7 @@ typedef struct _RenderThreadContext {
 static bool _renderJobISPC( void* context, uint32_t tid );
 
 
-int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned numThreads, unsigned blockSize, bool debug, bool recursive )
+int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, bool recursive )
 {
     PerfTimer t;
 
@@ -56,10 +56,9 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
     uint32_t      widthBlocks  = uint32_t( float( cols / blockSize ) ) + 1;
     uint32_t      heightBlocks = uint32_t( float( rows / blockSize ) ) + 1;
     uint32_t      numBlocks    = heightBlocks * widthBlocks;
-    thread_pool_t tp           = threadPoolCreate( numThreads );
 
-    printf( "Render %d x %d: blockSize %d x %d, %d blocks, [%d:%d] threads \n",
-        cols, rows, blockSize, blockSize, numBlocks, tp, numThreads );
+    printf( "Render %d x %d: blockSize %d x %d, %d blocks\n",
+        cols, rows, blockSize, blockSize, numBlocks );
 
     // Flatten the Scene object to an SoA ispc::sphere_t
     size_t sceneSize = scene.objects.size();
@@ -167,7 +166,6 @@ int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, un
     }
     printf( "\n" );
 
-    threadPoolDestroy( tp );
     delete[] contexts;
     delete[] _scene.center_x;
     delete[] _scene.center_y;

@@ -2,7 +2,9 @@
 
 #include "compute.h"
 #include "spin_lock.h"
+#include "thread_pool.h"
 
+#include "assert.h"
 #include <string>
 #include <vulkan/vulkan.h>
 
@@ -28,11 +30,17 @@ public:
 
     SpinLock      spinLock;
     compute_job_t handle;
+    job_t         cpu_thread_handle;
 
     // TEST:
-    std::string outputPath;
-    bool        enableGammaCorrection;
-    uint32_t    maxIterations;
+    void     save( const std::string path );
+    bool     enableGammaCorrection;
+    uint32_t maxIterations;
+    uint32_t outputWidth;
+    uint32_t outputHeight;
+    uint32_t submitCount;
+    uint32_t presubmitCount;
+    uint32_t postsubmitCount;
 
     // Inherited from the owning ComputeInstance:
     compute_t        instance;
@@ -44,18 +52,27 @@ public:
 
     ComputeJobVulkan() :
         handle( IComputeJob::nextHandle++ ),
+        cpu_thread_handle( INVALID_JOB ),
         workgroupWidth( -1 ),
         workgroupHeight( -1 ),
         workgroupDepth( -1 ),
         // TEST:
-        outputPath( "mandelbrot.ppm" ),
         enableGammaCorrection( false ),
-        maxIterations( 128 )
+        maxIterations( 128 ),
+        outputWidth( 3200 ),
+        outputHeight( 2400 ),
+        submitCount( 0 ),
+        presubmitCount( 0 ),
+        postsubmitCount( 0 )
     {
+        numInstances++;
     }
 
     virtual ~ComputeJobVulkan()
     {
+        assert(submitCount == 1);
+
+        numInstances--;
         destroy();
         handle = INVALID_COMPUTE_JOB;
     }
@@ -68,14 +85,23 @@ protected:
     // something unusual.
     // *****************************************************************************
 
-    VkPipeline       pipeline;
-    VkPipelineLayout pipelineLayout;
-    VkShaderModule   computeShaderModule;
-    VkCommandBuffer  commandBuffer;
-    VkFence          fence;
+    // Shared by all instances of this shader
+    // NOTE: making these static assumes that all ComputeJobs of a given type are never submitted to a different ComputeInstance
+    static std::atomic<bool>     firstInstance;
+    static std::atomic<uint32_t> numInstances;
+    static std::string           shaderPath;
+    static uint32_t              shaderLength;
+    static uint32_t*             shaderBinary;
+    static VkShaderModule        computeShaderModule;
+    static VkDescriptorSetLayout descriptorSetLayout;
+    static VkPipeline            pipeline;
+    static VkPipelineLayout      pipelineLayout;
+
+    // One per instance / invokation
+    VkFence fence;
 
     // Caller must delete[] the returned shader buffer
-    uint32_t* _loadShader( const std::string& shaderPath, size_t* pShaderLength );
+    uint32_t* _loadShader( const std::string& shaderPath, uint32_t* pShaderLength );
     uint32_t  _findMemoryType( VkPhysicalDevice physicalDevice, uint32_t type, VkMemoryPropertyFlags properties );
     bool      _createBuffer( VkDevice device, VkPhysicalDevice physicalDevice, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties );
     bool      _recordCommandBuffer();
@@ -87,6 +113,7 @@ protected:
     // Methods and members below are shader-specific
     // *****************************************************************************
 
+    uint32_t workgroupSize;
     uint32_t workgroupWidth;
     uint32_t workgroupHeight;
     uint32_t workgroupDepth;
@@ -101,12 +128,12 @@ protected:
     VkDeviceMemory outputBufferMemory;
     uint32_t       outputBufferSize;
 
-    VkDescriptorSet       descriptorSet;
-    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSet descriptorSet;
+    VkCommandBuffer commandBuffer;
 
-    bool _createBuffers();
-    bool _createDescriptorSetLayout();
-    bool _createDescriptorSet();
+    virtual bool _createBuffers();
+    virtual bool _createDescriptorSetLayout();
+    virtual bool _createDescriptorSet();
 };
 
 } // namespace pk

@@ -1,7 +1,9 @@
 #include "compute.h"
 #include "compute_job_vulkan.h"
+#include "object_queue.h"
 #include "perf_timer.h"
 #include "spin_lock.h"
+#include "thread_pool.h"
 #include "utils.h"
 
 #include <assert.h>
@@ -14,16 +16,18 @@
 namespace pk
 {
 
-static const int MAX_COMPUTE_INSTANCES       = 2;   // Max active compute instances (i.e. number of GPUs)
-static const int MAX_JOBS                    = 128; // Max active jobs per compute instance (i.e. max number of descriptor sets that can be allocated at once)
-static const int MAX_UNIFORM_BUFFERS_PER_JOB = 1;   // Assumes each compute shader has at most one uniform buffer
-static const int MAX_STORAGE_BUFFERS_PER_JOB = 2;   // Assumes each compute shader has at most one storage buffer for input and one for output
+static const int MAX_COMPUTE_INSTANCES       = 2;         // Max active compute instances (i.e. number of GPUs)
+static const int MAX_JOBS                    = 1024;      // Max active jobs per compute instance; strictly speaking, this is maxUniformBufferRange / average-size-of-uniforms-per-shader
+static const int MAX_UNIFORM_BUFFERS_PER_JOB = 1;         // Assumes each compute shader has at most one uniform buffer
+static const int MAX_STORAGE_BUFFERS_PER_JOB = 2;         // Assumes each compute shader has at most one storage buffer for input and one for output
+static const int MAX_COMPUTE_JOB_TIMEOUT_MS  = 60 * 1000; // Don't allow compute job to execute for too long (NOT IMPLEMENTED YET)
 
 std::atomic<compute_job_t> IComputeJob::nextHandle = 0;
 
 struct ComputeInstance {
-    SpinLock  spinLock;
-    compute_t handle;
+    SpinLock    spinLock;
+    compute_t   handle;
+    std::string deviceName;
 
     bool                     enableValidationLayers;
     std::vector<const char*> enabledLayers;
@@ -38,12 +42,9 @@ struct ComputeInstance {
     VkDescriptorPool         descriptorPool;
     VkCommandPool            commandPool;
 
-    // Jobs are owned by the ComputeInstance, so their resources can be destroyed on shutdown.
-    // As such, they always live on either the "activeJobs" list or the "finishedJobs" lists.
-    // Job creates can also manually call job.destroy() to free resources early.
+    uint32_t                                             maxJobs;
     std::unordered_map<compute_job_t, ComputeJobVulkan*> activeJobs;
     std::unordered_map<compute_job_t, ComputeJobVulkan*> finishedJobs;
-    std::unordered_map<compute_job_t, std::atomic_bool>  jobCompletion;
 
     ComputeInstance() :
         handle( INVALID_COMPUTE_INSTANCE ),
@@ -66,14 +67,15 @@ static bool     _enableValidationLayers( ComputeInstance& cp );
 static bool     _createLogicalDevice( ComputeInstance& cp );
 static bool     _createDescriptorPool( ComputeInstance& cp );
 static bool     _createCommandPool( ComputeInstance& cp );
-static bool     _executeJobs( ComputeInstance& cp, uint32_t timeoutMS );
+static bool     _executeComputeJob( void* context, uint32_t tid );
+static void     _computeJobMarkFinished( ComputeJobVulkan* job );
 
 
 //
 //  Public
 //
 
-compute_t computeCreate( uint32_t preferredDevice, bool enableValidation )
+compute_t computeCreate( bool enableValidation, uint32_t preferredDevice )
 {
     ComputeInstance* cp     = nullptr;
     compute_t        handle = INVALID_COMPUTE_INSTANCE;
@@ -97,13 +99,29 @@ compute_t computeCreate( uint32_t preferredDevice, bool enableValidation )
     }
 
     SpinLockGuard spinlock( cp->spinLock );
-    if ( _initComputeInstance( *cp, preferredDevice, enableValidation ) ) {
-        printf( "Compute[%d]: created OK\n", handle );
-        return handle;
-    } else {
-        printf( "ERROR: Compute[-1]: create FAIL\n" );
+
+    if ( !_initComputeInstance( *cp, preferredDevice, enableValidation ) ) {
+        printf( "ERROR: Compute[%d]: create FAIL\n", handle );
+        s_compute_instances[ handle ].handle = INVALID_COMPUTE_INSTANCE;
+
         return INVALID_COMPUTE_INSTANCE;
     }
+
+    printf( "\n" );
+
+    return handle;
+}
+
+
+uint32_t computeGetMaxJobs( compute_t handle )
+{
+    if ( !_valid( handle ) )
+        return R_FAIL;
+
+    ComputeInstance& cp = s_compute_instances[ handle ];
+    SpinLockGuard    compute_lock( cp.spinLock );
+
+    return cp.maxJobs;
 }
 
 
@@ -127,11 +145,17 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     _job->instance       = cp.handle;
 
     _job->create();
-    assert( _job->handle != INVALID_JOB_HANDLE );
+    assert( _job->handle != INVALID_COMPUTE_JOB );
 
     // Remove job from the finished list (it is normal to allocate a job once and re-submit it frequently)
     cp.finishedJobs.erase( _job->handle );
     cp.activeJobs[ _job->handle ] = _job;
+
+    _job->cpu_thread_handle = threadPoolSubmitJob( Function( _executeComputeJob, _job ) );
+    if ( _job->cpu_thread_handle == INVALID_JOB ) {
+        printf( "ERROR: Compute[%d]: submitJob failed\n", cp.handle );
+        _job->handle = INVALID_COMPUTE_JOB;
+    }
 
     return _job->handle;
 }
@@ -146,21 +170,23 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 
     PerfTimer timer;
 
+    cp.spinLock.lock();
+    if ( cp.activeJobs.find( job ) == cp.activeJobs.end() ) {
+        printf( "ERROR: Compute[%d]: waitForJob: handle %d is not owned by this instance\n", cp.handle, job );
+        cp.spinLock.release();
+
+        return R_FAIL;
+    }
+
     while ( true ) {
 
         // TODO: should block on mutex and/or condition variable in case job is long-running
 
         cp.spinLock.lock();
 
-        if ( cp.jobCompletion.find( job ) == cp.jobCompletion.end() ) {
-            printf( "ERROR: Compute[%d]: waitForJob: handle %d is not owned by this instance\n", cp.handle, job );
-            cp.spinLock.release();
-
-            return R_FAIL;
-        }
-
-        if ( cp.jobCompletion[ job ] ) {
-            cp.jobCompletion.erase( job );
+        if ( cp.finishedJobs.find( job ) != cp.finishedJobs.end() && cp.finishedJobs[ job ]->handle == job ) {
+            cp.finishedJobs.erase( job );
+            cp.activeJobs.erase( job );
             cp.spinLock.release();
 
             return R_OK;
@@ -169,26 +195,11 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
         cp.spinLock.release();
 
         std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); // gross
-        if ( timer.ElapsedMilliseconds() >= timeoutMS )
+        if ( timer.ElapsedMilliseconds() >= timeoutMS ) {
+            printf( "ERROR: Compute[%d]: waitForJob(%d) timeout\n", handle, job );
             return R_TIMEOUT;
+        }
     }
-}
-
-
-result computeExecuteJobs( uint32_t timeoutMS, compute_t handle )
-{
-    if ( !_valid( handle ) )
-        return R_FAIL;
-
-    ComputeInstance& cp = s_compute_instances[ handle ];
-    SpinLockGuard    lock( cp.spinLock );
-
-    printf( "Compute[%d]: execute...\n", cp.handle );
-
-    if ( _executeJobs( cp, timeoutMS ) )
-        return R_OK;
-    else
-        return R_FAIL;
 }
 
 
@@ -209,7 +220,7 @@ result computeDestroy( compute_t handle )
 
 
 //
-// Private implementation
+// Private implementation; this will fork if we ever support Metal
 //
 
 static bool _valid( compute_t handle )
@@ -252,6 +263,8 @@ static bool _initComputeInstance( ComputeInstance& cp, uint32_t preferredDevice,
 
 static bool _destroyComputeInstance( ComputeInstance& cp )
 {
+    printf( "Compute[%d]: destroying...\n", cp.handle );
+
     if ( cp.enableValidationLayers ) {
         auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr( cp.instance, "vkDestroyDebugReportCallbackEXT" );
         if ( func == nullptr ) {
@@ -260,22 +273,11 @@ static bool _destroyComputeInstance( ComputeInstance& cp )
         func( cp.instance, cp.debugReportCallback, nullptr );
     }
 
-    for ( auto kv : cp.activeJobs ) {
-        ComputeJobVulkan* job = kv.second;
-        job->destroy();
-    }
-
-    for ( auto kv : cp.finishedJobs ) {
-        ComputeJobVulkan* job = kv.second;
-        job->destroy();
-    }
-
     vkDestroyDescriptorPool( cp.device, cp.descriptorPool, nullptr );
     vkDestroyCommandPool( cp.device, cp.commandPool, nullptr );
     vkDestroyDevice( cp.device, nullptr );
     vkDestroyInstance( cp.instance, nullptr );
 
-    printf( "Compute[%d]: destroyed\n", cp.handle );
     cp.handle = INVALID_COMPUTE_INSTANCE;
 
     return true;
@@ -321,6 +323,8 @@ static bool _createInstance( ComputeInstance& cp, bool enableValidation )
 
         CHECK_VK( vkCreateDebugReportCallbackEXT( cp.instance, &createInfo, nullptr, &cp.debugReportCallback ) );
     }
+
+    cp.maxJobs = MAX_JOBS;
 
     return true;
 }
@@ -375,8 +379,6 @@ static bool _enableValidationLayers( ComputeInstance& cp )
 
 static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
 {
-    bool rval = false;
-
     uint32_t numDevices = 0;
     vkEnumeratePhysicalDevices( cp.instance, &numDevices, nullptr );
     if ( numDevices == 0 ) {
@@ -387,57 +389,76 @@ static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
     std::vector<VkPhysicalDevice> devices( numDevices );
     vkEnumeratePhysicalDevices( cp.instance, &numDevices, devices.data() );
 
-    uint32_t         deviceIndex = 0;
-    uint32_t         deviceID    = 0;
-    char             deviceName[ 32 ];
-    VkPhysicalDevice selectedDevice = nullptr;
+    bool                       found          = false;
+    uint32_t                   deviceIndex    = 0;
+    uint32_t                   deviceID       = 0;
+    VkPhysicalDevice           selectedDevice = nullptr;
+    VkPhysicalDeviceProperties props          = {};
+
     for ( VkPhysicalDevice device : devices ) {
-        VkPhysicalDeviceProperties props = {};
         vkGetPhysicalDeviceProperties( device, &props );
 
         // Select the preferred device, if specified
         if ( preferredDevice != -1 && deviceIndex == preferredDevice ) {
-            strncpy_s( deviceName, props.deviceName, ARRAY_SIZE( deviceName ) );
+            cp.deviceName  = std::string( props.deviceName );
             deviceID       = props.deviceID;
             selectedDevice = device;
-            rval           = true;
+            found          = true;
+            break;
         }
-        // Else, select the first device
-        if ( !deviceID ) {
-            strncpy_s( deviceName, props.deviceName, ARRAY_SIZE( deviceName ) );
+        // Else, map ComputeIndex[N] to device[n]
+        if ( deviceIndex == cp.handle && !deviceID ) {
+            cp.deviceName  = std::string( props.deviceName );
             deviceID       = props.deviceID;
             selectedDevice = device;
-            rval           = true;
+            found          = true;
+            break;
         }
         deviceIndex++;
-
-        printf( "deviceID = %d\n", props.deviceID );
-        printf( "\tdeviceType = %d\n", props.deviceType );
-        printf( "\tdeviceName = [%s]\n", props.deviceName );
-        printf( "\tapiVersion = 0x%x\n", props.apiVersion );
-        printf( "\tdriverVersion = 0x%x\n", props.driverVersion );
-        printf( "\tvendorID = 0x%x\n", props.vendorID );
-
-        printf( "\tmaxComputeSharedMemorySize = %d\n", props.limits.maxComputeSharedMemorySize );
-        printf( "\tmaxComputeWorkGroupCount = %d x %x x %d\n",
-            props.limits.maxComputeWorkGroupCount[ 0 ],
-            props.limits.maxComputeWorkGroupCount[ 1 ],
-            props.limits.maxComputeWorkGroupCount[ 2 ] );
-        printf( "\tmaxComputeWorkGroupSize = %d x %d x %d\n",
-            props.limits.maxComputeWorkGroupSize[ 0 ],
-            props.limits.maxComputeWorkGroupSize[ 1 ],
-            props.limits.maxComputeWorkGroupSize[ 2 ] );
-        printf( "\tmaxComputeWorkGroupInvocations = %d\n", props.limits.maxComputeWorkGroupInvocations );
-        printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
-
-        printf( "\n" );
     }
 
     cp.physicalDevice = selectedDevice;
 
-    printf( "Compute[%d]: using physical device %d [%s]\n", cp.handle, deviceID, deviceName );
+    if ( !found ) {
+        printf( "ERROR: Compute[%d]: found no physical device\n", cp.handle );
+        return R_FAIL;
+    }
 
-    return rval;
+    printf( "Compute[%d]: using physical device %d [%s]\n", cp.handle, deviceID, cp.deviceName.c_str() );
+
+    printf( "\tdeviceName = %s\n", props.deviceName );
+    printf( "\tdeviceID = %d\n", props.deviceID );
+    printf( "\tdeviceType = %d\n", props.deviceType );
+    printf( "\tapiVersion = 0x%x\n", props.apiVersion );
+    printf( "\tdriverVersion = 0x%x\n", props.driverVersion );
+    printf( "\tvendorID = 0x%x\n", props.vendorID );
+
+    printf( "\ttimestampComputeAndGraphics = %d\n", props.limits.timestampComputeAndGraphics );
+    printf( "\tmaxFramebufferWidth = %d\n", props.limits.maxFramebufferWidth );
+    printf( "\tmaxFramebufferHeight = %d\n", props.limits.maxFramebufferHeight );
+    printf( "\tmaxComputeSharedMemorySize = %d\n", props.limits.maxComputeSharedMemorySize );
+    printf( "\tmaxComputeWorkGroupCount = %d x %x x %d\n",
+        props.limits.maxComputeWorkGroupCount[ 0 ],
+        props.limits.maxComputeWorkGroupCount[ 1 ],
+        props.limits.maxComputeWorkGroupCount[ 2 ] );
+    printf( "\tmaxComputeWorkGroupSize = %d x %d x %d\n",
+        props.limits.maxComputeWorkGroupSize[ 0 ],
+        props.limits.maxComputeWorkGroupSize[ 1 ],
+        props.limits.maxComputeWorkGroupSize[ 2 ] );
+    printf( "\tmaxComputeWorkGroupInvocations = %d\n", props.limits.maxComputeWorkGroupInvocations );
+    printf( "\tmaxUniformBufferRange = %d\n", props.limits.maxUniformBufferRange );
+    printf( "\tmaxPushConstantsSize = %d\n", props.limits.maxPushConstantsSize );
+    printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
+    printf( "\tmaxMemoryAllocationCount = %d\n", props.limits.maxMemoryAllocationCount );
+    printf( "\tmaxBoundDescriptorSets = %d\n", props.limits.maxBoundDescriptorSets );
+    printf( "\tmaxPerStageResources = %d\n", props.limits.maxPerStageResources );
+    printf( "\tmaxPerStageDescriptorStorageBuffers = %d\n", props.limits.maxPerStageDescriptorStorageBuffers );
+    printf( "\tmaxDescriptorSetStorageBuffers = %d\n", props.limits.maxDescriptorSetStorageBuffers );
+
+    printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
+    printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
+
+    return R_OK;
 }
 
 
@@ -468,8 +489,6 @@ static uint32_t _findComputeQueueFamilyIndex( ComputeInstance& cp )
         printf( "ERROR: Compute[%d]: no compute queue found\n", cp.handle );
     }
 
-    printf( "Compute[%d]: using queue %d\n", cp.handle, idx );
-
     return idx;
 }
 
@@ -487,20 +506,14 @@ static bool _createLogicalDevice( ComputeInstance& cp )
     VkDeviceCreateInfo       deviceCreateInfo = {};
     VkPhysicalDeviceFeatures deviceFeatures   = {};
     deviceCreateInfo.sType                    = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceCreateInfo.enabledLayerCount        = (uint32_t)cp.enabledLayers.size();
-    deviceCreateInfo.ppEnabledLayerNames      = cp.enabledLayers.data();
-    // BUG: creation fails because "VK_EXT_debug_report" is not supported by selected device, even though
-    // we enabled it earlier
-    //deviceCreateInfo.enabledExtensionCount    = (uint32_t)cp.enabledExtensions.size();
-    //deviceCreateInfo.ppEnabledExtensionNames  = cp.enabledExtensions.data();
-    deviceCreateInfo.pQueueCreateInfos    = &queueCreateInfo;
-    deviceCreateInfo.queueCreateInfoCount = 1;
-    deviceCreateInfo.pEnabledFeatures     = &deviceFeatures;
+    deviceCreateInfo.pQueueCreateInfos        = &queueCreateInfo;
+    deviceCreateInfo.queueCreateInfoCount     = 1;
+    deviceCreateInfo.pEnabledFeatures         = &deviceFeatures;
 
     CHECK_VK( vkCreateDevice( cp.physicalDevice, &deviceCreateInfo, nullptr, &cp.device ) );
 
     vkGetDeviceQueue( cp.device, cp.queueFamilyIndex, 0, &cp.queue );
-    printf( "Compute[%d]: created logical device, queue 0x%llx\n", cp.handle, (uintptr_t)cp.queue );
+    printf( "Compute[%d]: created logical device on queue %d\n", cp.handle, queueCreateInfo.queueFamilyIndex );
 
     return true;
 }
@@ -526,12 +539,22 @@ static bool _createDescriptorPool( ComputeInstance& cp )
     createDescriptorPoolInfo.maxSets                    = MAX_JOBS;
     createDescriptorPoolInfo.poolSizeCount              = ARRAY_SIZE( poolSizes );
     createDescriptorPoolInfo.pPoolSizes                 = poolSizes;
+    createDescriptorPoolInfo.flags                      = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
     CHECK_VK( vkCreateDescriptorPool( cp.device, &createDescriptorPoolInfo, nullptr, &cp.descriptorPool ) );
 
-    printf( "Compute[%d]: created %d descriptor pools:\n", cp.handle, createDescriptorPoolInfo.poolSizeCount );
+    //printf( "Compute[%d]: created %d descriptor pools:\n", cp.handle, createDescriptorPoolInfo.poolSizeCount );
     for ( int i = 0; i < ARRAY_SIZE( poolSizes ); i++ ) {
-        printf( "pool.type %d count %d\n", poolSizes[ i ].type, poolSizes[ i ].descriptorCount );
+        switch ( poolSizes[ i ].type ) {
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+                printf( "Compute[%d]: Uniform pool: %d descriptors\n", cp.handle, poolSizes[ i ].descriptorCount );
+                break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+                printf( "Compute[%d]: Storage pool: %d descriptors\n", cp.handle, poolSizes[ i ].descriptorCount );
+                break;
+            default:
+                assert( 0 );
+        }
     }
 
     return true;
@@ -542,7 +565,7 @@ static bool _createCommandPool( ComputeInstance& cp )
 {
     VkCommandPoolCreateInfo commandPoolCreateInfo = {};
     commandPoolCreateInfo.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolCreateInfo.flags                   = 0;
+    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // 0;
     commandPoolCreateInfo.queueFamilyIndex        = cp.queueFamilyIndex;
     CHECK_VK( vkCreateCommandPool( cp.device, &commandPoolCreateInfo, nullptr, &cp.commandPool ) );
 
@@ -552,39 +575,38 @@ static bool _createCommandPool( ComputeInstance& cp )
 }
 
 
-// TODO: iteratore over list of jobs and call job->pre_execute()/execute()/post_execute()
-static bool _executeJobs( ComputeInstance& cp, uint32_t timeoutMS )
+static bool _executeComputeJob( void* context, uint32_t tid )
 {
-    if ( cp.activeJobs.empty() )
-        return false;
+    ComputeJobVulkan* job = (ComputeJobVulkan*)context;
+    ComputeInstance&  cp  = s_compute_instances[ job->instance ];
+    assert( job->handle != INVALID_COMPUTE_JOB );
 
-    PerfTimer timer;
+    //printf( "Compute[%d]: execute job %d\n", job->instance, job->handle );
 
-    // TODO: force-kill any job that exceeds the timeout
+    job->presubmit();
 
-    for ( auto kv : cp.activeJobs ) {
-        ComputeJobVulkan* job = kv.second;
+    // It's safe to create resources on many threads, but vkQueueSubmit() must be synchronized:
+    cp.spinLock.lock();
+    job->submit();
+    cp.spinLock.release();
 
-        if ( job->handle == INVALID_COMPUTE_JOB ) {
-            printf( "ERROR: Compute[%d]: invalid job on active list\n", cp.handle );
-            cp.activeJobs.erase( job->handle );
-            continue;
-        }
+    job->postsubmit( MAX_COMPUTE_JOB_TIMEOUT_MS );
 
-        printf( "Compute[%d]: execute job %d\n", cp.handle, job->handle );
-
-        job->presubmit();
-        job->submit();
-        job->postsubmit( timeoutMS );
-
-        cp.jobCompletion[ job->handle ] = true;
-        cp.finishedJobs[ job->handle ]  = job;
-
-        cp.activeJobs.erase( job->handle );
-    }
+    _computeJobMarkFinished( job );
 
     return true;
 }
 
+
+static void _computeJobMarkFinished( ComputeJobVulkan* job )
+{
+    assert( job->instance < ARRAY_SIZE( s_compute_instances ) );
+
+    ComputeInstance& cp = s_compute_instances[ job->instance ];
+
+    cp.spinLock.lock();
+    cp.finishedJobs[ job->handle ] = job;
+    cp.spinLock.release();
+}
 
 } // namespace pk

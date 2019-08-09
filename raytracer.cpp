@@ -57,7 +57,7 @@ static vector3 _background( const ray& r );
 static bool    _renderJob( void* context, uint32_t tid );
 
 
-int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned numThreads, unsigned blockSize, bool debug, bool recursive )
+int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, bool recursive )
 {
     PerfTimer t;
 
@@ -66,10 +66,9 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     uint32_t      widthBlocks  = uint32_t( float( cols / blockSize ) ) + 1;
     uint32_t      heightBlocks = uint32_t( float( rows / blockSize ) ) + 1;
     uint32_t      numBlocks    = heightBlocks * widthBlocks;
-    thread_pool_t tp           = threadPoolCreate( numThreads );
 
-    printf( "Render %d x %d: blockSize %d x %d, %d blocks, [%d:%d] threads \n",
-        cols, rows, blockSize, blockSize, numBlocks, tp, numThreads );
+    printf( "Render %d x %d: blockSize %d x %d, %d blocks\n",
+        cols, rows, blockSize, blockSize, numBlocks );
 
 
     // Flatten the Scene object to an array of sphere_t, which is what Scene should've been in the first place
@@ -133,7 +132,6 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     }
     printf( "\n" );
 
-    threadPoolDestroy( tp );
     delete[] contexts;
     //delete[] pScene;
 

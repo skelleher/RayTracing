@@ -50,13 +50,13 @@ namespace pk
 #endif
 
 
-#define DEBUGCHK( x )                                           \
-    {                                                           \
-        if ( !( x ) ) {                                         \
-            printf( "DEBUGCHK [%s:%d]: ", __FILE__, __LINE__ ); \
-            printf( "[%s]\n", #x );                             \
-            DEBUG_BREAK();                                      \
-        }                                                       \
+#define DEBUGCHK( x )                                                        \
+    {                                                                        \
+        if ( !( x ) ) {                                                      \
+            printf( "DEBUGCHK [%s:%d:%s]: ", __FILE__, __LINE__, __func__ ); \
+            printf( "[%s]\n", #x );                                          \
+            DEBUG_BREAK();                                                   \
+        }                                                                    \
     }
 
 #ifndef SHIP_BUILD
@@ -67,13 +67,13 @@ void check_cuda( cudaError_t result, char const* const function, const char* con
 #endif
 
 #ifndef SHIP_BUILD
-#define CHECK_VK( f )                                                             \
-    {                                                                             \
-        VkResult res = ( f );                                                     \
-        if ( res != VK_SUCCESS ) {                                                \
-            printf( "CHECK_VK [%s:%d] VkResult: %d\n", __FILE__, __LINE__, res ); \
-            DEBUG_BREAK();                                                        \
-        }                                                                         \
+#define CHECK_VK( f )                                                                          \
+    {                                                                                          \
+        VkResult res = ( f );                                                                  \
+        if ( res != VK_SUCCESS ) {                                                             \
+            printf( "CHECK_VK [%s:%d:%s] VkResult: %d\n", __FILE__, __LINE__, __func__, res ); \
+            DEBUG_BREAK();                                                                     \
+        }                                                                                      \
     }
 #else
 #define CHECK_VK( x ) ( x )
