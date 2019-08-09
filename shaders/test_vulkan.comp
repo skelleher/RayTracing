@@ -3,6 +3,7 @@
 
 // For details on GLSL layout syntax see: https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)
 
+// TODO: use specialization constants to configure the shader at pipeline construction time
 #define WORKGROUP_SIZE 32
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1 ) in;
 
@@ -10,6 +11,7 @@ layout(std140, binding = 0) uniform UniformBufferObject {
     uint outputWidth;
     uint outputHeight;
     uint maxIterations;
+    bool applyGammaCorrection;
 } ubo;
 
 struct Pixel{
@@ -22,23 +24,30 @@ layout(std140, binding = 1) buffer buf
 };
 
 void main() {
-    uint WIDTH = ubo.outputWidth;
-    uint HEIGHT = ubo.outputHeight;
+    uint width = ubo.outputWidth;
+    uint height = ubo.outputHeight;
 
     //  In order to fit the work into workgroups, some unnecessary threads are launched.
     //  We terminate those threads here. 
-    if(gl_GlobalInvocationID.x >= WIDTH || gl_GlobalInvocationID.y >= HEIGHT)
+    if(gl_GlobalInvocationID.x >= width || gl_GlobalInvocationID.y >= height)
         return;
 
-    float x = float(gl_GlobalInvocationID.x) / float(WIDTH);
-    float y = float(gl_GlobalInvocationID.y) / float(HEIGHT);
+    float x = float(gl_GlobalInvocationID.x) / float(width);
+    float y = float(gl_GlobalInvocationID.y) / float(height);
+
+//    vec4 _color = vec4(255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 255.0 * float(gl_WorkGroupID.y) / float(gl_NumWorkGroups.y), 255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 1);
+//    if (gl_LocalInvocationID.x == 0 || gl_LocalInvocationID.y == 0)
+//    {
+//        _color = vec4(255, 0, 0, 1);
+//    }
+//    imageData[width * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x].value = _color;
+//    return;
 
     //  What follows is code for rendering the mandelbrot set. 
     vec2 uv = vec2(x,y);
     float n = 0.0;
     vec2 c = vec2(-.445, 0.0) +  (uv - 0.5)*(2.0+ 1.7*0.2  ), 
     z = vec2(0.0);
-    //const int M =128;
     uint M = ubo.maxIterations;
     for (uint i = 0; i<M; i++)
     {
@@ -57,8 +66,9 @@ void main() {
     vec4 color = vec4( d + e*cos( 6.28318*(f*t+g) ), 1.0);
 
     // Apply 2.0 Gamma correction
-    color = vec4( sqrt( color.r ), sqrt( color.g ), sqrt( color.b ), 1.0 );
+    if (ubo.applyGammaCorrection)
+        color = vec4( sqrt( color.r ), sqrt( color.g ), sqrt( color.b ), 1.0 );
 
     // store the rendered mandelbrot set into a storage buffer:
-    imageData[WIDTH * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x].value = color;
+    imageData[width * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x].value = color;
 }

@@ -2,34 +2,35 @@
 
 #include "result.h"
 
+#include <atomic>
 #include <stdint.h>
 
 namespace pk
 {
 
-typedef uint32_t compute_t;
 typedef uint32_t compute_job_t;
-#define INVALID_COMPUTE_INSTANCE ( compute_t )( -1 )
-#define DEFAULT_COMPUTE_INSTANCE ( compute_t( 0 ) )
 #define INVALID_COMPUTE_JOB ( compute_job_t )( -1 )
 
-// TODO: each job should have a function for:
-// create (load shader; define, allocate, and bind buffers and descriptor sets)
-// pre-submit (update uniforms)
-// post-submit (do something with output, e.g. copy to CPU or pass to next compute job)
-// destroy (clean up resources)
-typedef struct
-{
-    const char* shaderPath;
-    void* context;
-    size_t contextSize;
-} compute_job_desc_t;
+class IComputeJob {
+public:
+    virtual void create()                         = 0; // allocate resources: load shader; allocate buffers, bind descriptors
+    virtual void presubmit()                      = 0; // update share inputs / uniforms
+    virtual void submit()                         = 0; // submit command buffer to queue; DO NOT BLOCK in this function
+    virtual void postsubmit( uint32_t timeoutMS ) = 0; // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
+    virtual void destroy()                        = 0; // clean up resources
+
+    static std::atomic<compute_job_t> nextHandle;
+};
+
+
+typedef uint32_t compute_t;
+#define INVALID_COMPUTE_INSTANCE ( compute_t )( -1 )
+#define DEFAULT_COMPUTE_INSTANCE ( compute_t( 0 ) )
 
 compute_t     computeCreate( uint32_t preferredDevice = 0, bool enableValidation = false );
-compute_job_t computeCreateJob( compute_job_desc_t& job, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
-result        computeSubmitJob( compute_job_t job );
-result        computeExecuteJobs( uint32_t timeoutMS = -1, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
-result        computeDestroyJob( compute_job_t job );
+compute_job_t computeSubmitJob( IComputeJob& job, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
+result        computeExecuteJobs( uint32_t timeoutMS = (uint32_t)-1, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
+result        computeWaitForJob( compute_job_t job, uint32_t timeoutMS = (uint32_t)-1, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
 result        computeDestroy( compute_t instance = DEFAULT_COMPUTE_INSTANCE );
 
 } // namespace pk
