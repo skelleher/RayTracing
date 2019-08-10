@@ -408,7 +408,7 @@ static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
             break;
         }
         // Else, map ComputeIndex[N] to device[n]
-        if ( deviceIndex == cp.handle && !deviceID ) {
+        if ( deviceIndex == cp.handle ) {
             cp.deviceName  = std::string( props.deviceName );
             deviceID       = props.deviceID;
             selectedDevice = device;

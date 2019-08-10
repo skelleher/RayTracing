@@ -27,7 +27,7 @@ typedef uint32_t compute_t;
 #define INVALID_COMPUTE_INSTANCE ( compute_t )( -1 )
 #define DEFAULT_COMPUTE_INSTANCE ( compute_t( 0 ) )
 
-compute_t     computeCreate( bool enableValidation = false, uint32_t preferredDevice = 0 );
+compute_t     computeCreate( bool enableValidation = false, uint32_t preferredDevice = -1 );
 uint32_t      computeGetMaxJobs( compute_t instance = DEFAULT_COMPUTE_INSTANCE );
 compute_job_t computeSubmitJob( IComputeJob& job, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
 result        computeWaitForJob( compute_job_t job, uint32_t timeoutMS = (uint32_t)-1, compute_t instance = DEFAULT_COMPUTE_INSTANCE );
