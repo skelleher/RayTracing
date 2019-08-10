@@ -72,7 +72,6 @@ void check_cuda( cudaError_t result, char const* const function, const char* con
         VkResult res = ( f );                                                                  \
         if ( res != VK_SUCCESS ) {                                                             \
             printf( "CHECK_VK [%s:%d:%s] VkResult: %d\n", __FILE__, __LINE__, __func__, res ); \
-            DEBUG_BREAK();                                                                     \
         }                                                                                      \
     }
 #else

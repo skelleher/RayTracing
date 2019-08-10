@@ -4,6 +4,7 @@
 
 #include "thread_pool.h"
 
+#include "event_object.h"
 #include "object_queue.h"
 #include "perf_timer.h"
 #include "spin_lock.h"
@@ -54,7 +55,7 @@ public:
 
 typedef struct _thread {
     uint32_t          tid;
-    thread_pool_t     hPool;
+    thread_pool_t     pool;
     std::thread*      thread;
     std::atomic<bool> shouldExit;
 
@@ -65,7 +66,7 @@ typedef struct _thread {
 
     _thread() :
         tid( -1 ),
-        hPool( INVALID_THREAD_POOL ),
+        pool( INVALID_THREAD_POOL ),
         thread( nullptr ),
         shouldExit( false ),
         jobsExecuted( 0 )
@@ -75,7 +76,7 @@ typedef struct _thread {
     _thread( const _thread& rhs )
     {
         tid          = rhs.tid;
-        hPool        = rhs.hPool;
+        pool         = rhs.pool;
         thread       = std::move( rhs.thread );
         shouldExit   = false;
         jobsExecuted = rhs.jobsExecuted;
@@ -84,19 +85,19 @@ typedef struct _thread {
 
 
 typedef struct _thread_pool {
-    thread_pool_t                hPool;
+    thread_pool_t                handle;
     std::vector<_thread_t>       threads;
     std::vector<std::thread::id> threadIDs;
     std::atomic<uint64_t>        nexthandle;
     Job*                         jobQueueBuffer;
     obj_queue_t                  jobQueue;
 
-    SpinLock                                        spinLock;
-    std::unordered_map<job_t, std::atomic_bool>     jobCompletion;
+    SpinLock spinLock;
     std::unordered_map<job_t, std::atomic_uint32_t> groupCompletion;
+    std::unordered_map<job_t, Event>                activeJobEvents;
 
     _thread_pool() :
-        hPool( INVALID_THREAD_POOL ),
+        handle( INVALID_THREAD_POOL ),
         jobQueueBuffer( nullptr ),
         jobQueue( INVALID_QUEUE ),
         nexthandle( 0 ) {}
@@ -127,10 +128,10 @@ thread_pool_t threadPoolCreate( uint32_t numThreads )
     for ( int i = 0; i < ARRAY_SIZE( s_pools ); i++ ) {
         SpinLockGuard lock( s_pools[ i ].spinLock );
 
-        if ( s_pools[ i ].hPool == INVALID_THREAD_POOL ) {
-            tp        = &s_pools[ i ];
-            handle    = (thread_pool_t)i;
-            tp->hPool = handle;
+        if ( s_pools[ i ].handle == INVALID_THREAD_POOL ) {
+            tp         = &s_pools[ i ];
+            handle     = (thread_pool_t)i;
+            tp->handle = handle;
             break;
         }
     }
@@ -145,8 +146,8 @@ thread_pool_t threadPoolCreate( uint32_t numThreads )
 
     for ( uint32_t i = 0; i < numThreads; i++ ) {
         _thread_t t;
-        t.hPool = handle;
-        t.tid   = (uint32_t)i;
+        t.pool = handle;
+        t.tid  = (uint32_t)i;
 
         tp->threads.push_back( t );
         tp->threads[ i ].thread  = new std::thread( _threadWorker, (void*)&tp->threads[ i ] );
@@ -177,7 +178,7 @@ job_t threadPoolSubmitJob( const Invokable& i, thread_pool_t pool, thread_pool_b
     // NOTE: do NOT hold the spinlock when calling queue_send_blocking();
     // you'll block the worker threads and deadlock.
     tp->spinLock.lock();
-    tp->jobCompletion[ job.handle ] = false;
+    tp->activeJobEvents[ job.handle ].reset();
     tp->spinLock.release();
 
     result rval = R_OK;
@@ -208,24 +209,30 @@ result threadPoolWaitForJob( job_t job, uint32_t timeout_ms, thread_pool_t pool 
 
     _thread_pool_t* tp = &s_pools[ pool ];
 
-    PerfTimer timer;
+    tp->spinLock.lock();
+    if ( tp->activeJobEvents.find( job ) == tp->activeJobEvents.end() ) {
+        printf( "ERROR: ThreadPool[%d]: waitForJob: handle %d is not owned by this pool\n", tp->handle, (uint32_t)job );
+        tp->spinLock.release();
+
+        return R_FAIL;
+    }
 
     while ( true ) {
 
-        // TODO: should block on mutex and/or condition variable in case job is long-running
+        //tp->spinLock.lock();
+        //if ( tp->jobCompletion[ job ] ) {
+        //    tp->activeJobEvents.erase( job );
+        //    tp->spinLock.release();
+        //    return R_OK;
+        //}
+        //tp->spinLock.release();
 
+        result rval = tp->activeJobEvents[ job ].wait( timeout_ms );
         tp->spinLock.lock();
-
-        if ( tp->jobCompletion[ job ] ) {
-            tp->jobCompletion.erase( job );
-            tp->spinLock.release();
-            return R_OK;
-        }
+        tp->activeJobEvents.erase( job );
         tp->spinLock.release();
 
-        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); // gross
-        if ( timer.ElapsedMilliseconds() >= timeout_ms )
-            return R_TIMEOUT;
+        return rval;
     }
 }
 
@@ -237,23 +244,20 @@ result threadPoolWaitForJobs( job_group_t group, uint32_t timeout_ms, thread_poo
 
     _thread_pool_t* tp = &s_pools[ pool ];
 
-    PerfTimer timer;
-
     while ( true ) {
 
-        // TODO: should block on mutex and/or condition variable in case job is long-running
+        //tp->spinLock.lock();
+        //if ( tp->groupCompletion[ group ] ) {
+        //    tp->groupCompletion.erase( group );
+        //    tp->spinLock.release();
+        //    return R_OK;
+        //}
+        //tp->spinLock.release();
 
+        result rval = tp->activeJobEvents[ group ].wait( timeout_ms );
         tp->spinLock.lock();
-        if ( tp->groupCompletion[ group ] ) {
-            tp->groupCompletion.erase( group );
-            tp->spinLock.release();
-            return R_OK;
-        }
+        tp->activeJobEvents.erase( group );
         tp->spinLock.release();
-
-        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); // gross
-        if ( timer.ElapsedMilliseconds() >= timeout_ms )
-            return R_TIMEOUT;
     }
 }
 
@@ -290,7 +294,7 @@ bool threadPoolDestroy( thread_pool_t pool )
         auto                                duration     = std::chrono::duration_cast<std::chrono::seconds>( elapsedTicks ).count();
         double                              seconds      = std::chrono::duration<double>( duration ).count();
 
-        printf( "Thread [%d:%d] %zd jobs %f seconds %f jobs/second\n", t.hPool, t.tid, t.jobsExecuted, seconds, t.jobsExecuted / seconds );
+        printf( "Thread [%d:%d] %zd jobs %f seconds %f jobs/second\n", t.pool, t.tid, t.jobsExecuted, seconds, t.jobsExecuted / seconds );
     }
 
     return true;
@@ -329,7 +333,7 @@ static void _threadWorker( void* context )
     SET_THREAD_NAME();
 
     _thread_t*      thread = (_thread_t*)context;
-    _thread_pool_t* tp     = &s_pools[ thread->hPool ];
+    _thread_pool_t* tp     = &s_pools[ thread->pool ];
 
     thread->startTick = std::chrono::steady_clock::now();
     //printf( "_threadWorker[%d:%d] started\n", thread->pool, thread->tid );
@@ -343,7 +347,7 @@ static void _threadWorker( void* context )
             if ( thread->shouldExit )
                 goto Exit;
 
-            uint32_t tid = uint32_t( thread->hPool << 16 | thread->tid );
+            uint32_t tid = uint32_t( thread->pool << 16 | thread->tid );
             job.invoke( tid );
             thread->jobsExecuted++;
 
@@ -351,11 +355,14 @@ static void _threadWorker( void* context )
             SpinLockGuard lock( tp->spinLock );
 
             if ( job.handle != INVALID_JOB ) {
-                tp->jobCompletion[ job.handle ] = true;
+                //tp->jobCompletion[ job.handle ] = true;
+                tp->activeJobEvents[ job.handle ].set();
             }
 
             if ( job.groupHandle != INVALID_JOB_GROUP ) {
                 tp->groupCompletion[ job.groupHandle ]++;
+                // TODO: signal group completion event
+                //tp->activeJobEvents[job.groupHandle].set();
             }
         }
     }

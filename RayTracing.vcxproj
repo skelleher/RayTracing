@@ -183,6 +183,7 @@
     <ClInclude Include="camera.h" />
     <ClInclude Include="compute.h" />
     <ClInclude Include="compute_job_vulkan.h" />
+    <ClInclude Include="event_object.h" />
     <ClInclude Include="raytracer_ispc.h" />
     <ClInclude Include="object_queue.h" />
     <ClInclude Include="perf_timer.h" />

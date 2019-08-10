@@ -9,7 +9,7 @@ namespace pk
 // The simplest, laziest spin lock imaginable (thanks Stack Overflow)
 //
 
-class SpinLock {
+class SpinLock final {
     std::atomic_flag _lock = ATOMIC_FLAG_INIT;
 
 public:
@@ -26,7 +26,7 @@ public:
         _lock.clear( std::memory_order_release );
     }
 
-    SpinLock& operator=( const SpinLock& rhs)
+    SpinLock& operator=( const SpinLock& rhs )
     {
         // do nothing; cannot assign or copy std::atomic_flag
         return *this;
@@ -34,11 +34,10 @@ public:
 };
 
 
-class SpinLockGuard
-{
+class SpinLockGuard {
 public:
-    SpinLockGuard(SpinLock& lock) :
-        m_lock(lock)
+    SpinLockGuard( SpinLock& lock ) :
+        m_lock( lock )
     {
         m_lock.lock();
     }

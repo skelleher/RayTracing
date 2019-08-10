@@ -20,19 +20,22 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
         assert( instances[ i ] != INVALID_COMPUTE_INSTANCE );
     }
 
-    if (preferredDevice > ARRAY_SIZE(instances) - 1)
+    if ( preferredDevice > ARRAY_SIZE( instances ) - 1 )
         preferredDevice = 0;
     printf( "Using compute instance %d\n", preferredDevice );
     compute_t cp = instances[ preferredDevice ];
 
     // Create and submit jobs
-    uint32_t maxJobs = computeGetMaxJobs(cp);
-    ComputeJobVulkan* jobs = new ComputeJobVulkan[ maxJobs ];
+    uint32_t          maxJobs = computeGetMaxJobs( cp );
+    ComputeJobVulkan* jobs    = new ComputeJobVulkan[ maxJobs ];
+
+    printf( "Submitting %d jobs\n", maxJobs );
+
     for ( uint32_t i = 0; i < maxJobs; i++ ) {
         jobs[ i ].enableGammaCorrection = i % 2;
-        jobs[ i ].maxIterations         = uint32_t(random() * 512);
-        jobs[i].outputWidth = 320;
-        jobs[i].outputHeight = 240;
+        jobs[ i ].maxIterations         = uint32_t( random() * 512 );
+        jobs[ i ].outputWidth           = 1600;
+        jobs[ i ].outputHeight          = 1200;
 
         //printf( "job[%d]: %d %d\n", i, jobs[ i ].enableGammaCorrection, jobs[ i ].maxIterations );
 
@@ -40,8 +43,9 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
         assert( jobs[ i ].handle != INVALID_COMPUTE_JOB );
     }
 
-    
+
     // Wait for jobs to complete
+    printf( "Waiting for jobs to complete...\n" );
     for ( int i = 0; i < ARRAY_SIZE( jobs ); i++ ) {
         rval = computeWaitForJob( jobs[ i ].handle, timeoutMS, cp );
         assert( rval == R_OK );

@@ -131,6 +131,10 @@ void ComputeJobVulkan::submit()
 {
     submitCount++;
 
+    if ( !commandBuffer ) {
+        return;
+    }
+
     //printf( "ComputeJobVulkan[%d:%d]::submit()\n", instance, handle );
 
     VkSubmitInfo submitInfo       = {};
@@ -164,7 +168,7 @@ void ComputeJobVulkan::postsubmit( uint32_t timeoutMS )
 
 void ComputeJobVulkan::save( const std::string outputPath )
 {
-    printf("Saving to %s\n", outputPath.c_str());
+    printf( "Saving to %s\n", outputPath.c_str() );
 
     // TEST: save output of mandelbrot
     void* mappedMemory = nullptr;
@@ -207,7 +211,7 @@ void ComputeJobVulkan::save( const std::string outputPath )
 
     vkUnmapMemory( device, outputBufferMemory );
 
-    printf("done\n");
+    printf( "done\n" );
 }
 
 

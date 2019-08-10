@@ -81,6 +81,9 @@
     <ClInclude Include="compute_job_vulkan.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="event_object.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -147,10 +150,6 @@
     <CustomBuild Include="raytracer.ispc">
       <Filter>Source Files</Filter>
     </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="shaders\test_vulkan.comp">
-      <Filter>Source Files</Filter>
-    </None>
+    <CustomBuild Include="shaders\test_vulkan.comp" />
   </ItemGroup>
 </Project>

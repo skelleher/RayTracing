@@ -1,5 +1,6 @@
 #include "compute.h"
 #include "compute_job_vulkan.h"
+#include "event_object.h"
 #include "object_queue.h"
 #include "perf_timer.h"
 #include "spin_lock.h"
@@ -44,6 +45,7 @@ struct ComputeInstance {
 
     uint32_t                                             maxJobs;
     std::unordered_map<compute_job_t, ComputeJobVulkan*> activeJobs;
+    std::unordered_map<compute_job_t, Event>             activeJobEvents;
     std::unordered_map<compute_job_t, ComputeJobVulkan*> finishedJobs;
 
     ComputeInstance() :
@@ -150,6 +152,7 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     // Remove job from the finished list (it is normal to allocate a job once and re-submit it frequently)
     cp.finishedJobs.erase( _job->handle );
     cp.activeJobs[ _job->handle ] = _job;
+    cp.activeJobEvents[ _job->handle ].reset();
 
     _job->cpu_thread_handle = threadPoolSubmitJob( Function( _executeComputeJob, _job ) );
     if ( _job->cpu_thread_handle == INVALID_JOB ) {
@@ -168,10 +171,10 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 
     ComputeInstance& cp = s_compute_instances[ handle ];
 
-    PerfTimer timer;
+    //PerfTimer timer;
 
     cp.spinLock.lock();
-    if ( cp.activeJobs.find( job ) == cp.activeJobs.end() ) {
+    if ( cp.activeJobEvents.find( job ) == cp.activeJobEvents.end() ) {
         printf( "ERROR: Compute[%d]: waitForJob: handle %d is not owned by this instance\n", cp.handle, job );
         cp.spinLock.release();
 
@@ -180,26 +183,29 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 
     while ( true ) {
 
-        // TODO: should block on mutex and/or condition variable in case job is long-running
+        //cp.spinLock.lock();
 
+        //if ( cp.finishedJobs.find( job ) != cp.finishedJobs.end() && cp.finishedJobs[ job ]->handle == job ) {
+        //    cp.finishedJobs.erase( job );
+        //    cp.activeJobs.erase( job );
+        //    cp.activeJobEvents.erase( job );
+        //    cp.spinLock.release();
+
+        //    return R_OK;
+        //}
+
+        //cp.spinLock.release();
+
+
+        result rval = cp.activeJobEvents[ job ].wait( timeoutMS );
         cp.spinLock.lock();
-
-        if ( cp.finishedJobs.find( job ) != cp.finishedJobs.end() && cp.finishedJobs[ job ]->handle == job ) {
-            cp.finishedJobs.erase( job );
-            cp.activeJobs.erase( job );
-            cp.spinLock.release();
-
-            return R_OK;
-        }
-
+        cp.activeJobEvents.erase( job );
         cp.spinLock.release();
 
-        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) ); // gross
-        if ( timer.ElapsedMilliseconds() >= timeoutMS ) {
-            printf( "ERROR: Compute[%d]: waitForJob(%d) timeout\n", handle, job );
-            return R_TIMEOUT;
-        }
+        return rval;
     }
+
+    return R_OK;
 }
 
 
@@ -565,7 +571,7 @@ static bool _createCommandPool( ComputeInstance& cp )
 {
     VkCommandPoolCreateInfo commandPoolCreateInfo = {};
     commandPoolCreateInfo.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // 0;
+    commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     commandPoolCreateInfo.queueFamilyIndex        = cp.queueFamilyIndex;
     CHECK_VK( vkCreateCommandPool( cp.device, &commandPoolCreateInfo, nullptr, &cp.commandPool ) );
 
@@ -606,6 +612,7 @@ static void _computeJobMarkFinished( ComputeJobVulkan* job )
 
     cp.spinLock.lock();
     cp.finishedJobs[ job->handle ] = job;
+    cp.activeJobEvents[ job->handle ].set();
     cp.spinLock.release();
 }
 

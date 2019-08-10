@@ -116,8 +116,8 @@ int main( int argc, char** argv )
     thread_pool_t tp = threadPoolCreate( numThreads );
     printf( "Created [%d:%d] threads\n", tp, numThreads );
 
-    testCompute( preferredDevice, enableValidation );
-    return 0;
+    //testCompute( preferredDevice, enableValidation );
+    //return 0;
 
     //
     // Define the scene and camera
