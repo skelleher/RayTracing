@@ -26,11 +26,11 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     compute_t cp = instances[ preferredDevice ];
 
     // Create and submit jobs
-    uint32_t          maxJobs = 1000; // computeGetMaxJobs(cp);
+    uint32_t          maxJobs = 200; // computeGetMaxJobs(cp);
     ComputeJobVulkan* jobs    = new ComputeJobVulkan[ maxJobs ];
 
     // Try to saturate the GPU
-    uint32_t maxIterations = 20;
+    uint32_t maxIterations = 30;
     for ( uint32_t iter = 0; iter < maxIterations; iter++ ) {
         printf( "Submitting %d jobs\n", maxJobs );
 
