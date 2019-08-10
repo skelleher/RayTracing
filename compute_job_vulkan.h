@@ -1,10 +1,10 @@
 #pragma once
 
+#include "assert.h"
 #include "compute.h"
 #include "spin_lock.h"
 #include "thread_pool.h"
 
-#include "assert.h"
 #include <string>
 #include <vulkan/vulkan.h>
 
@@ -53,6 +53,7 @@ public:
     ComputeJobVulkan() :
         handle( IComputeJob::nextHandle++ ),
         cpu_thread_handle( INVALID_JOB ),
+        created( false ),
         workgroupWidth( -1 ),
         workgroupHeight( -1 ),
         workgroupDepth( -1 ),
@@ -70,7 +71,7 @@ public:
 
     virtual ~ComputeJobVulkan()
     {
-        assert(submitCount == 1);
+        assert( submitCount == 1 );
 
         numInstances--;
         destroy();
@@ -99,6 +100,7 @@ protected:
 
     // One per instance / invokation
     VkFence fence;
+    bool    created;
 
     // Caller must delete[] the returned shader buffer
     uint32_t* _loadShader( const std::string& shaderPath, uint32_t* pShaderLength );

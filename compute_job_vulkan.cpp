@@ -68,10 +68,14 @@ void ComputeJobVulkan::create()
     workgroupHeight = (uint32_t)ceil( outputHeight / (float)workgroupSize );
     workgroupDepth  = 1;
 
-    _createBuffers();
-    _createDescriptorSet();
-    _recordCommandBuffer();
-    _createFence();
+    if ( !created ) {
+        _createBuffers();
+        _createDescriptorSet();
+        _recordCommandBuffer();
+        _createFence();
+
+        created = true;
+    }
 }
 
 
@@ -142,6 +146,7 @@ void ComputeJobVulkan::submit()
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &commandBuffer;
 
+    CHECK_VK( vkResetFences( device, 1, &fence ) );
     CHECK_VK( vkQueueSubmit( queue, 1, &submitInfo, fence ) );
 }
 

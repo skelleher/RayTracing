@@ -49,6 +49,14 @@ namespace pk
 #define DEBUG_BREAK() assert( 0 )
 #endif
 
+#define ASSERT( x )                                                        \
+    {                                                                      \
+        if ( !( x ) ) {                                                    \
+            printf( "ASSERT [%s:%d:%s]: ", __FILE__, __LINE__, __func__ ); \
+            printf( "[%s]\n", #x );                                        \
+            DEBUG_BREAK();                                                 \
+        }                                                                  \
+    }
 
 #define DEBUGCHK( x )                                                        \
     {                                                                        \

@@ -171,8 +171,6 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 
     ComputeInstance& cp = s_compute_instances[ handle ];
 
-    //PerfTimer timer;
-
     cp.spinLock.lock();
     if ( cp.activeJobEvents.find( job ) == cp.activeJobEvents.end() ) {
         printf( "ERROR: Compute[%d]: waitForJob: handle %d is not owned by this instance\n", cp.handle, job );
@@ -180,22 +178,19 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 
         return R_FAIL;
     }
+    cp.spinLock.release();
 
     while ( true ) {
 
         //cp.spinLock.lock();
-
         //if ( cp.finishedJobs.find( job ) != cp.finishedJobs.end() && cp.finishedJobs[ job ]->handle == job ) {
         //    cp.finishedJobs.erase( job );
         //    cp.activeJobs.erase( job );
         //    cp.activeJobEvents.erase( job );
         //    cp.spinLock.release();
-
         //    return R_OK;
         //}
-
         //cp.spinLock.release();
-
 
         result rval = cp.activeJobEvents[ job ].wait( timeoutMS );
         cp.spinLock.lock();

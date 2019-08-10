@@ -200,7 +200,8 @@ result Queue<TYPE>::sendBlocking( obj_queue_t queue, TYPE* msg, uint32_t timeout
 
         static unsigned int timeout_warning_ms = 1000;
         if ( (unsigned int)timer.ElapsedMilliseconds() >= timeout_warning_ms ) {
-            printf( "queue_sendBlocking(%d) hung for %d seconds\n", queue, (unsigned)timer.ElapsedSeconds() );
+            uint32_t count = size( queue );
+            printf( "queue_sendBlocking(%d:%d) hung for %d seconds\n", queue, count, (unsigned)timer.ElapsedSeconds() );
             timeout_warning_ms *= 2;
         }
 
