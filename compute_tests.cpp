@@ -48,7 +48,7 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
 
         // Wait for jobs to complete
         printf( "Waiting for jobs to complete...\n" );
-        for ( int i = 0; i < maxJobs; i++ ) {
+        for ( unsigned i = 0; i < maxJobs; i++ ) {
             rval = computeWaitForJob( jobs[ i ].handle, timeoutMS, cp );
             ASSERT( rval == R_OK );
         }

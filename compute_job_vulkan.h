@@ -20,7 +20,7 @@ namespace pk
 // . single storage buffer for output
 //
 
-class ComputeJobVulkan : public IComputeJob {
+class ComputeJobVulkan : public virtual IComputeJob {
 public:
     virtual void create();                         // allocate resources: load shader; allocate buffers, bind descriptors
     virtual void presubmit();                      // update share inputs / uniforms
