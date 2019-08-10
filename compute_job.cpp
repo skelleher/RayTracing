@@ -1,4 +1,4 @@
-#include "compute_job_vulkan.h"
+#include "compute_job.h"
 
 #include "perf_timer.h"
 #include "utils.h"
@@ -22,15 +22,15 @@ static const uint32_t WORK_GROUP_SIZE = 32;
 // Instances of a compute job can share the same shader binary.
 // They might be able to share the same pipeline / command buffer,
 // but that means patching the I/O descriptors before enqueing to Vulkan.
-std::atomic<bool>     ComputeJobVulkan::firstInstance       = true;
-std::atomic<uint32_t> ComputeJobVulkan::numInstances        = 0;
-uint32_t              ComputeJobVulkan::shaderLength        = 0;
-uint32_t*             ComputeJobVulkan::shaderBinary        = nullptr;
-std::string           ComputeJobVulkan::shaderPath          = "shaders\\test_vulkan.spv";
-VkShaderModule        ComputeJobVulkan::computeShaderModule = nullptr;
-VkDescriptorSetLayout ComputeJobVulkan::descriptorSetLayout;
-VkPipeline            ComputeJobVulkan::pipeline;
-VkPipelineLayout      ComputeJobVulkan::pipelineLayout;
+std::atomic<bool>     ComputeJob::firstInstance       = true;
+std::atomic<uint32_t> ComputeJob::numInstances        = 0;
+uint32_t              ComputeJob::shaderLength        = 0;
+uint32_t*             ComputeJob::shaderBinary        = nullptr;
+std::string           ComputeJob::shaderPath          = "shaders\\test_vulkan.spv";
+VkShaderModule        ComputeJob::computeShaderModule = nullptr;
+VkDescriptorSetLayout ComputeJob::descriptorSetLayout;
+VkPipeline            ComputeJob::pipeline;
+VkPipelineLayout      ComputeJob::pipelineLayout;
 
 // TODO: these never change (for a given pipeline) so should be
 // set at pipeline creation stage via Push Constants instead of passed as uniforms.
@@ -42,13 +42,13 @@ struct UniformBufferObject {
 };
 
 
-void ComputeJobVulkan::create()
+void ComputeJob::create()
 {
     // Create static resources shared by all shaders of this type
     if ( firstInstance ) {
         firstInstance = false; // TODO: race condition
 
-        printf( "ComputeJobVulkan[%d:%d]::create()\n", instance, handle );
+        printf( "ComputeJob[%d:%d]::create()\n", instance, handle );
         shaderBinary = _loadShader( shaderPath, &shaderLength );
 
         VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
@@ -79,9 +79,9 @@ void ComputeJobVulkan::create()
 }
 
 
-void ComputeJobVulkan::destroy()
+void ComputeJob::destroy()
 {
-    //printf( "ComputeJobVulkan[%d:%d]::destroy()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::destroy()\n", instance, handle );
 
     SpinLockGuard lock( spinLock );
 
@@ -101,7 +101,7 @@ void ComputeJobVulkan::destroy()
 
     // Free the static resources shared by all instances
     if ( numInstances == 0 && pipeline ) {
-        printf( "ComputeJobVulkan[%d:%d]::destroy()\n", instance, handle );
+        printf( "ComputeJob[%d:%d]::destroy()\n", instance, handle );
         vkDestroyShaderModule( device, computeShaderModule, nullptr );
         vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
         vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
@@ -112,11 +112,11 @@ void ComputeJobVulkan::destroy()
 }
 
 
-void ComputeJobVulkan::presubmit()
+void ComputeJob::presubmit()
 {
     presubmitCount++;
 
-    //printf( "ComputeJobVulkan[%d:%d]::presubmit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::presubmit()\n", instance, handle );
 
     struct UniformBufferObject ubo;
     ubo.outputWidth          = outputWidth;
@@ -131,7 +131,7 @@ void ComputeJobVulkan::presubmit()
 }
 
 
-void ComputeJobVulkan::submit()
+void ComputeJob::submit()
 {
     submitCount++;
 
@@ -139,7 +139,7 @@ void ComputeJobVulkan::submit()
         return;
     }
 
-    //printf( "ComputeJobVulkan[%d:%d]::submit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::submit()\n", instance, handle );
 
     VkSubmitInfo submitInfo       = {};
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -151,27 +151,27 @@ void ComputeJobVulkan::submit()
 }
 
 
-void ComputeJobVulkan::postsubmit( uint32_t timeoutMS )
+void ComputeJob::postsubmit( uint32_t timeoutMS )
 {
     postsubmitCount++;
 
-    //printf( "ComputeJobVulkan[%d:%d]::postsubmit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::postsubmit()\n", instance, handle );
 
     uint64_t timeoutNS = timeoutMS * 1000000;
     VkResult rval      = vkWaitForFences( device, 1, &fence, VK_TRUE, timeoutNS );
 
     if ( rval == VK_TIMEOUT ) {
-        printf( "ERROR: ComputeJobVulkan[%d:%d]: timeout (%d ms)\n", instance, handle, timeoutMS );
+        printf( "ERROR: ComputeJob[%d:%d]: timeout (%d ms)\n", instance, handle, timeoutMS );
         return;
     }
 
     if ( rval != VK_SUCCESS ) {
-        printf( "ERROR: ComputeJobVulkan[%d:%d]: error %d\n", instance, handle, rval );
+        printf( "ERROR: ComputeJob[%d:%d]: error %d\n", instance, handle, rval );
         return;
     }
 }
 
-void ComputeJobVulkan::save( const std::string outputPath )
+void ComputeJob::save( const std::string outputPath )
 {
     printf( "Saving to %s\n", outputPath.c_str() );
 
@@ -228,12 +228,12 @@ void ComputeJobVulkan::save( const std::string outputPath )
 // Common utility methods
 // *****************************************************************************
 
-uint32_t* ComputeJobVulkan::_loadShader( const std::string& shaderPath, uint32_t* pShaderLength )
+uint32_t* ComputeJob::_loadShader( const std::string& shaderPath, uint32_t* pShaderLength )
 {
     FILE*   fp  = nullptr;
     errno_t err = fopen_s( &fp, shaderPath.c_str(), "rb" );
     if ( fp == nullptr || err == EINVAL ) {
-        printf( "ERROR: ComputeJobVulkan: failed to load shader [%s]\n", shaderPath.c_str() );
+        printf( "ERROR: ComputeJob: failed to load shader [%s]\n", shaderPath.c_str() );
         return nullptr;
     }
 
@@ -255,13 +255,13 @@ uint32_t* ComputeJobVulkan::_loadShader( const std::string& shaderPath, uint32_t
         *pShaderLength = (uint32_t)padded;
     }
 
-    printf( "ComputeJobVulkan[%d:%d]: loaded %zd bytes of shader (padded to %zd)\n", instance, handle, filesize, padded );
+    printf( "ComputeJob[%d:%d]: loaded %zd bytes of shader (padded to %zd)\n", instance, handle, filesize, padded );
 
     return buffer;
 }
 
 
-uint32_t ComputeJobVulkan::_findMemoryType( VkPhysicalDevice physicalDevice, uint32_t type, VkMemoryPropertyFlags properties )
+uint32_t ComputeJob::_findMemoryType( VkPhysicalDevice physicalDevice, uint32_t type, VkMemoryPropertyFlags properties )
 {
     VkPhysicalDeviceMemoryProperties memoryProperties = {};
     vkGetPhysicalDeviceMemoryProperties( physicalDevice, &memoryProperties );
@@ -276,7 +276,7 @@ uint32_t ComputeJobVulkan::_findMemoryType( VkPhysicalDevice physicalDevice, uin
 }
 
 
-bool ComputeJobVulkan::_createBuffer( VkDevice device, VkPhysicalDevice physicalDevice, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties )
+bool ComputeJob::_createBuffer( VkDevice device, VkPhysicalDevice physicalDevice, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties )
 {
     VkBufferCreateInfo bufferCreateInfo = {};
     bufferCreateInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -297,13 +297,13 @@ bool ComputeJobVulkan::_createBuffer( VkDevice device, VkPhysicalDevice physical
     CHECK_VK( vkAllocateMemory( device, &allocateInfo, nullptr, pBufferMemory ) );
     CHECK_VK( vkBindBufferMemory( device, *pBuffer, *pBufferMemory, 0 ) );
 
-    //printf( "ComputeJobVulkan[%d:%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", instance, handle, bufferSize, usage, properties );
+    //printf( "ComputeJob[%d:%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", instance, handle, bufferSize, usage, properties );
 
     return true;
 }
 
 
-bool ComputeJobVulkan::_createComputePipeline()
+bool ComputeJob::_createComputePipeline()
 {
     // Prevent race condition where ComputeJobs spawn on multiple threads, but only the first one
     // is constructing the shader
@@ -329,13 +329,13 @@ bool ComputeJobVulkan::_createComputePipeline()
 
     CHECK_VK( vkCreateComputePipelines( device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline ) );
 
-    printf( "ComputeJobVulkan[%d:%d]: created shader pipeline for [%s]\n", instance, handle, shaderPath.c_str() );
+    printf( "ComputeJob[%d:%d]: created shader pipeline for [%s]\n", instance, handle, shaderPath.c_str() );
 
     return true;
 }
 
 
-bool ComputeJobVulkan::_recordCommandBuffer()
+bool ComputeJob::_recordCommandBuffer()
 {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType                       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -354,13 +354,13 @@ bool ComputeJobVulkan::_recordCommandBuffer()
     vkCmdDispatch( commandBuffer, workgroupWidth, workgroupHeight, workgroupDepth );
     CHECK_VK( vkEndCommandBuffer( commandBuffer ) );
 
-    //printf( "ComputeJobVulkan[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", instance, handle, workgroupWidth, workgroupHeight, workgroupDepth );
+    //printf( "ComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", instance, handle, workgroupWidth, workgroupHeight, workgroupDepth );
 
     return true;
 }
 
 
-bool ComputeJobVulkan::_createFence()
+bool ComputeJob::_createFence()
 {
     VkFenceCreateInfo fenceCreateInfo = {};
     fenceCreateInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -376,7 +376,7 @@ bool ComputeJobVulkan::_createFence()
 // subclasses
 // *****************************************************************************
 
-bool ComputeJobVulkan::_createBuffers()
+bool ComputeJob::_createBuffers()
 {
     outputBufferSize = outputWidth * outputHeight * 4 * sizeof( float );
     _createBuffer( device, physicalDevice, outputBufferSize, &outputBuffer, &outputBufferMemory, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
@@ -388,7 +388,7 @@ bool ComputeJobVulkan::_createBuffers()
 }
 
 
-bool ComputeJobVulkan::_createDescriptorSetLayout()
+bool ComputeJob::_createDescriptorSetLayout()
 {
     // Define the layout of shader resources
     // Can we assume all compute shaders will have one uniform input buffer and one storage output buffer?
@@ -416,13 +416,13 @@ bool ComputeJobVulkan::_createDescriptorSetLayout()
     createInfo.pBindings                       = bindings;
 
     CHECK_VK( vkCreateDescriptorSetLayout( device, &createInfo, nullptr, &descriptorSetLayout ) );
-    //printf( "ComputeJobVulkan[%d:%d]: defined %d descriptors\n", instance, handle, createInfo.bindingCount );
+    //printf( "ComputeJob[%d:%d]: defined %d descriptors\n", instance, handle, createInfo.bindingCount );
 
     return true;
 }
 
 
-bool ComputeJobVulkan::_createDescriptorSet()
+bool ComputeJob::_createDescriptorSet()
 {
     // Bind shader descriptors to buffers
 
@@ -435,7 +435,7 @@ bool ComputeJobVulkan::_createDescriptorSet()
     allocInfo.pSetLayouts                 = &descriptorSetLayout;
 
     CHECK_VK( vkAllocateDescriptorSets( device, &allocInfo, &descriptorSet ) );
-    //printf( "ComputeJobVulkan[%d:%d]: created %d descriptor sets\n", instance, handle, allocInfo.descriptorSetCount );
+    //printf( "ComputeJob[%d:%d]: created %d descriptor sets\n", instance, handle, allocInfo.descriptorSetCount );
 
     if ( descriptorSet == 0 ) {
         printf( "ERROR: ComputeJob[%d:%d] failed to alloc descriptors (pool exhausted?)\n", instance, handle );
@@ -471,7 +471,7 @@ bool ComputeJobVulkan::_createDescriptorSet()
     vkUpdateDescriptorSets( device, 1, &writeStorageSet, 0, nullptr );
 
     unsigned int numDescriptors = 2;
-    //printf( "ComputeJobVulkan[%d:%d]: bound %d descriptors\n", instance, handle, numDescriptors );
+    //printf( "ComputeJob[%d:%d]: bound %d descriptors\n", instance, handle, numDescriptors );
 
     return true;
 }

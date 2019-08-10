@@ -1,5 +1,5 @@
 #include "compute.h"
-#include "compute_job_vulkan.h"
+#include "compute_job.h"
 #include "utils.h"
 
 #include <assert.h>
@@ -27,7 +27,7 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
 
     // Create and submit jobs
     uint32_t          maxJobs = 200; // computeGetMaxJobs(cp);
-    ComputeJobVulkan* jobs    = new ComputeJobVulkan[ maxJobs ];
+    ComputeJob* jobs    = new ComputeJob[ maxJobs ];
 
     // Try to saturate the GPU
     uint32_t maxIterations = 30;

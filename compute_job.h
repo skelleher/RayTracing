@@ -20,7 +20,7 @@ namespace pk
 // . single storage buffer for output
 //
 
-class ComputeJobVulkan : public virtual IComputeJob {
+class ComputeJob : public virtual IComputeJob {
 public:
     virtual void create();                         // allocate resources: load shader; allocate buffers, bind descriptors
     virtual void presubmit();                      // update share inputs / uniforms
@@ -50,7 +50,7 @@ public:
     VkCommandPool    commandPool;
     VkQueue          queue;
 
-    ComputeJobVulkan() :
+    ComputeJob() :
         handle( IComputeJob::nextHandle++ ),
         cpu_thread_handle( INVALID_JOB ),
         created( false ),
@@ -69,7 +69,7 @@ public:
         numInstances++;
     }
 
-    virtual ~ComputeJobVulkan()
+    virtual ~ComputeJob()
     {
         assert( submitCount == 1 );
 

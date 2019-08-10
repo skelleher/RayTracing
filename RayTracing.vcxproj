@@ -182,7 +182,7 @@
   <ItemGroup>
     <ClInclude Include="camera.h" />
     <ClInclude Include="compute.h" />
-    <ClInclude Include="compute_job_vulkan.h" />
+    <ClInclude Include="compute_job.h" />
     <ClInclude Include="event_object.h" />
     <ClInclude Include="raytracer_ispc.h" />
     <ClInclude Include="object_queue.h" />
@@ -205,7 +205,7 @@
     <ClInclude Include="vector_cuda.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="compute_job_vulkan.cpp">
+    <ClCompile Include="compute_job.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>
@@ -213,7 +213,7 @@
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>
-    <ClCompile Include="compute_vulkan.cpp">
+    <ClCompile Include="compute.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>

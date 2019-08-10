@@ -1,5 +1,5 @@
 #include "compute.h"
-#include "compute_job_vulkan.h"
+#include "compute_job.h"
 #include "event_object.h"
 #include "object_queue.h"
 #include "perf_timer.h"
@@ -44,9 +44,9 @@ struct ComputeInstance {
     VkCommandPool            commandPool;
 
     uint32_t                                             maxJobs;
-    std::unordered_map<compute_job_t, ComputeJobVulkan*> activeJobs;
+    std::unordered_map<compute_job_t, ComputeJob*> activeJobs;
     std::unordered_map<compute_job_t, Event>             activeJobEvents;
-    std::unordered_map<compute_job_t, ComputeJobVulkan*> finishedJobs;
+    std::unordered_map<compute_job_t, ComputeJob*> finishedJobs;
 
     ComputeInstance() :
         handle( INVALID_COMPUTE_INSTANCE ),
@@ -70,7 +70,7 @@ static bool     _createLogicalDevice( ComputeInstance& cp );
 static bool     _createDescriptorPool( ComputeInstance& cp );
 static bool     _createCommandPool( ComputeInstance& cp );
 static bool     _executeComputeJob( void* context, uint32_t tid );
-static void     _computeJobMarkFinished( ComputeJobVulkan* job );
+static void     _computeJobMarkFinished( ComputeJob* job );
 
 
 //
@@ -135,7 +135,7 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     ComputeInstance& cp = s_compute_instances[ handle ];
     SpinLockGuard    compute_lock( cp.spinLock );
 
-    ComputeJobVulkan* _job = dynamic_cast<ComputeJobVulkan*>( &job );
+    ComputeJob* _job = dynamic_cast<ComputeJob*>( &job );
     SpinLockGuard     job_lock( _job->spinLock );
 
     // Bind the job to this compute instance
@@ -578,7 +578,7 @@ static bool _createCommandPool( ComputeInstance& cp )
 
 static bool _executeComputeJob( void* context, uint32_t tid )
 {
-    ComputeJobVulkan* job = (ComputeJobVulkan*)context;
+    ComputeJob* job = (ComputeJob*)context;
     ComputeInstance&  cp  = s_compute_instances[ job->instance ];
     assert( job->handle != INVALID_COMPUTE_JOB );
 
@@ -599,7 +599,7 @@ static bool _executeComputeJob( void* context, uint32_t tid )
 }
 
 
-static void _computeJobMarkFinished( ComputeJobVulkan* job )
+static void _computeJobMarkFinished( ComputeJob* job )
 {
     assert( job->instance < ARRAY_SIZE( s_compute_instances ) );
 

@@ -78,10 +78,10 @@
     <ClInclude Include="compute.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="compute_job_vulkan.h">
+    <ClInclude Include="event_object.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="event_object.h">
+    <ClInclude Include="compute_job.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -119,13 +119,13 @@
     <ClCompile Include="raytracer_simd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="compute_vulkan.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="compute_tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="compute_job_vulkan.cpp">
+    <ClCompile Include="compute.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compute_job.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
