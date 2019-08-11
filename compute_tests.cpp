@@ -1,5 +1,6 @@
 #include "compute.h"
 #include "compute_job.h"
+#include "mandelbrot_compute_job.h"
 #include "utils.h"
 
 #include <assert.h>
@@ -15,7 +16,7 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     compute_t instances[ 2 ] = {};
     uint32_t  timeoutMS      = -1;
 
-    rval = computeCreate( enableValidation );
+    rval = computeInit( enableValidation );
     ASSERT( rval == R_OK );
 
     if ( preferredDevice > ARRAY_SIZE( instances ) - 1 )
@@ -24,47 +25,75 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     compute_t hCompute = computeAcquire( preferredDevice );
     ASSERT( hCompute != INVALID_COMPUTE_INSTANCE );
 
-    // Create and submit jobs
-    uint32_t maxJobs = 200; // computeGetMaxJobs(cp);
+    //
+    // Create and submit vanilla compute jobs
+    //
+    uint32_t maxJobs = 200;
     std::vector<std::unique_ptr<ComputeJob>> jobs;
     jobs.resize( maxJobs );
     for ( unsigned i = 0; i < maxJobs; i++ ) {
         jobs[ i ] = ComputeJob::create( hCompute );
     }
 
+    for ( uint32_t i = 0; i < maxJobs; i++ ) {
+        jobs[ i ]->outputWidth           = 1000;
+        jobs[ i ]->outputHeight          = 1000;
+
+        //printf( "job[%d]: %d %d\n", i, jobs[ i ]->enableGammaCorrection, jobs[ i ]->maxIterations );
+
+        jobs[ i ]->handle = computeSubmitJob( *jobs[ i ], hCompute );
+        ASSERT( jobs[ i ]->handle != INVALID_COMPUTE_JOB );
+    }
+
+    // Wait for jobs to complete
+    printf( "Waiting for jobs to complete...\n" );
+    for ( unsigned i = 0; i < maxJobs; i++ ) {
+        rval = computeWaitForJob( jobs[ i ]->handle, timeoutMS, hCompute );
+        ASSERT( rval == R_OK );
+    }
+    jobs[ 0 ]->save( "job1.ppm" );
+
+    // HACK: Manually free resources so we don't run out of descriptors or command buffers for the next test
+    for (unsigned i = 0; i < maxJobs; i++) {
+        jobs[i].reset();
+    }
+
+    //
+    // Create and submit custom compute jobs
+    //
+    std::vector<std::unique_ptr<MandelbrotComputeJob>> mandelbrotJobs;
+    mandelbrotJobs.resize( maxJobs );
+    for ( unsigned i = 0; i < maxJobs; i++ ) {
+        mandelbrotJobs[ i ] = MandelbrotComputeJob::create( hCompute );
+    }
     // Try to saturate the GPU
     uint32_t maxIterations = 30;
     for ( uint32_t iter = 0; iter < maxIterations; iter++ ) {
         printf( "Submitting %d jobs\n", maxJobs );
 
         for ( uint32_t i = 0; i < maxJobs; i++ ) {
-            jobs[ i ]->enableGammaCorrection = i % 2;
-            jobs[ i ]->maxIterations         = uint32_t( random() * 512 );
-            jobs[ i ]->outputWidth           = 1000;
-            jobs[ i ]->outputHeight          = 1000;
+            mandelbrotJobs[ i ]->enableGammaCorrection = i % 2;
+            mandelbrotJobs[ i ]->maxIterations         = uint32_t( random() * 512 );
+            mandelbrotJobs[ i ]->outputWidth           = 1000;
+            mandelbrotJobs[ i ]->outputHeight          = 1000;
 
             //printf( "job[%d]: %d %d\n", i, jobs[ i ]->enableGammaCorrection, jobs[ i ]->maxIterations );
 
-            jobs[ i ]->handle = computeSubmitJob( *jobs[ i ], hCompute );
-            ASSERT( jobs[ i ]->handle != INVALID_COMPUTE_JOB );
+            mandelbrotJobs[ i ]->handle = computeSubmitJob( *mandelbrotJobs[ i ], hCompute );
+            ASSERT( mandelbrotJobs[ i ]->handle != INVALID_COMPUTE_JOB );
         }
 
         // Wait for jobs to complete
         printf( "Waiting for jobs to complete...\n" );
         for ( unsigned i = 0; i < maxJobs; i++ ) {
-            rval = computeWaitForJob( jobs[ i ]->handle, timeoutMS, hCompute );
+            rval = computeWaitForJob( mandelbrotJobs[ i ]->handle, timeoutMS, hCompute );
             ASSERT( rval == R_OK );
         }
     }
 
-
-    jobs[ 0 ]->save( "job1.ppm" );
+    mandelbrotJobs[ 0 ]->save( "mandelbrot1.ppm" );
 
     printf( "testCompute(): PASS\n" );
-
-    //for ( int i = 0; i < maxJobs; i++ ) {
-    //    jobs[i]->destroy();
-    //}
 
     rval = computeRelease( hCompute );
     ASSERT( rval == R_OK );

@@ -2,6 +2,7 @@
 
 #include "assert.h"
 #include "compute.h"
+#include "compute_job.h"
 #include "spin_lock.h"
 #include "thread_pool.h"
 
@@ -13,29 +14,12 @@ namespace pk
 {
 
 //
-// Example Vulkan compute job.
-// You should copy and modify it to do something interesting.
-//
-// Assumes your compute shader has:
-// . entry point named main()
-// . single uniform buffer for input
-// . single storage buffer for output
+// Example instance of ComputeJob: render a Mandelbrot into a buffer and save it to disk
 //
 
-class IComputeJobVulkan {
+class MandelbrotComputeJob final : public virtual IComputeJob, public IComputeJobVulkan {
 public:
-    // Mandatory Vulkan members; assigned by the Vulkan implementation of computeSubmitJob()
-    VkDevice         device;
-    VkPhysicalDevice physicalDevice;
-    VkDescriptorPool descriptorPool;
-    VkCommandPool    commandPool;
-    VkQueue          queue;
-};
-
-
-class ComputeJob final : public virtual IComputeJob, public IComputeJobVulkan {
-public:
-    static std::unique_ptr<ComputeJob> create( compute_t hCompute ); // factory method
+    static std::unique_ptr<MandelbrotComputeJob> create( compute_t hCompute ); // factory method
 
     // IComputeJob
     virtual void init();                           // allocate resources: load shader; allocate buffers, bind descriptors
@@ -44,31 +28,36 @@ public:
     virtual void postsubmit( uint32_t timeoutMS ); // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
     virtual void destroy();                        // clean up resources
 
+    bool     enableGammaCorrection;
+    uint32_t maxIterations;
     uint32_t outputWidth;
     uint32_t outputHeight;
     void     save( const std::string path );
 
 protected:
-    ComputeJob()                    = delete;
-    ComputeJob( const ComputeJob& ) = delete;
-    ComputeJob& operator=( const ComputeJob& ) = delete;
+    MandelbrotComputeJob()                              = delete;
+    MandelbrotComputeJob( const MandelbrotComputeJob& ) = delete;
+    MandelbrotComputeJob& operator=( const MandelbrotComputeJob& ) = delete;
 
-    ComputeJob( compute_t hCompute ) :
+    MandelbrotComputeJob( compute_t hCompute ) :
         IComputeJob( hCompute ),
         initialized( false ),
         workgroupWidth( -1 ),
         workgroupHeight( -1 ),
         workgroupDepth( -1 ),
-        outputWidth( 640 ),
-        outputHeight( 480 )
+        enableGammaCorrection( false ),
+        maxIterations( 128 ),
+        outputWidth( 3200 ),
+        outputHeight( 2400 )
     {
         numInstances++;
     }
 
 public:
-    virtual ~ComputeJob()
+    virtual ~MandelbrotComputeJob()
     {
         destroy();
+        handle = INVALID_COMPUTE_JOB;
     }
 
 protected:
@@ -80,7 +69,7 @@ protected:
     // *****************************************************************************
 
     // Shared by all instances of this shader
-    // NOTE: making these static assumes that all ComputeJobs of a given type are never submitted to a different ComputeInstance
+    // NOTE: making these static assumes that all MandelbrotComputeJobs are never submitted to a different ComputeInstance
     static std::atomic<bool>     firstInstance;
     static std::atomic<uint32_t> numInstances;
     static std::string           shaderPath;

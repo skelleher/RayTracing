@@ -106,6 +106,9 @@ int main( int argc, char** argv )
     }
 
     bool enableValidation = false;
+#ifdef _DEBUG
+    enableValidation = true;
+#endif
     if ( args.cmdOptionExists( "-v" ) ) {
         enableValidation = true;
     }

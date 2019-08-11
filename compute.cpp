@@ -46,9 +46,9 @@ struct ComputeInstance {
     VkCommandPool            commandPool;
 
     uint32_t                                       maxJobs;
-    std::unordered_map<compute_job_t, ComputeJob*> activeJobs;
+    std::unordered_map<compute_job_t, IComputeJob*> activeJobs;
     std::unordered_map<compute_job_t, Event>       activeJobEvents;
-    std::unordered_map<compute_job_t, ComputeJob*> finishedJobs;
+    std::unordered_map<compute_job_t, IComputeJob*> finishedJobs;
 
     ComputeInstance() :
         refCount( 0 ),
@@ -72,14 +72,14 @@ static bool     _createLogicalDevice( ComputeInstance& cp );
 static bool     _createDescriptorPool( ComputeInstance& cp );
 static bool     _createCommandPool( ComputeInstance& cp );
 static bool     _executeComputeJob( void* context, uint32_t tid );
-static void     _computeJobMarkFinished( ComputeJob* job );
+static void     _computeJobMarkFinished( IComputeJob* job );
 
 
 //
 //  Public
 //
 
-result computeCreate( bool enableValidation )
+result computeInit( bool enableValidation )
 {
     compute_t handle       = INVALID_COMPUTE_INSTANCE;
     unsigned  numInstances = 0;
@@ -164,7 +164,7 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     ComputeInstance& cp = s_compute_instances[ handle ];
     SpinLockGuard    compute_lock( cp.spinLock );
 
-    ComputeJob*   _job = dynamic_cast<ComputeJob*>( &job );
+    IComputeJob*   _job = dynamic_cast<IComputeJob*>( &job );
     SpinLockGuard job_lock( _job->spinLock );
 
     if ( _job->hCompute != cp.handle ) {
@@ -173,11 +173,12 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     }
 
     // Bind the job to this device
-    _job->device         = cp.device;
-    _job->physicalDevice = cp.physicalDevice;
-    _job->descriptorPool = cp.descriptorPool;
-    _job->commandPool    = cp.commandPool;
-    _job->queue          = cp.queue;
+    IComputeJobVulkan* _vkJob = dynamic_cast<IComputeJobVulkan*>( &job );
+    _vkJob->device         = cp.device;
+    _vkJob->physicalDevice = cp.physicalDevice;
+    _vkJob->descriptorPool = cp.descriptorPool;
+    _vkJob->commandPool    = cp.commandPool;
+    _vkJob->queue          = cp.queue;
     _job->init();
     assert( _job->handle != INVALID_COMPUTE_JOB );
 
@@ -599,7 +600,7 @@ static bool _createCommandPool( ComputeInstance& cp )
 
 static bool _executeComputeJob( void* context, uint32_t tid )
 {
-    ComputeJob* job = (ComputeJob*)context;
+    IComputeJob* job = (IComputeJob*)context;
     assert( job->hCompute < ARRAY_SIZE( s_compute_instances ) );
     ComputeInstance& cp = s_compute_instances[ job->hCompute ];
     assert( job->handle != INVALID_COMPUTE_JOB );
@@ -621,7 +622,7 @@ static bool _executeComputeJob( void* context, uint32_t tid )
 }
 
 
-static void _computeJobMarkFinished( ComputeJob* job )
+static void _computeJobMarkFinished( IComputeJob* job )
 {
     assert( job->hCompute < ARRAY_SIZE( s_compute_instances ) );
 

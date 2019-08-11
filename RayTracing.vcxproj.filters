@@ -13,134 +13,155 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\ComputeJobs">
+      <UniqueIdentifier>{e6f877a2-a65a-471b-ad50-e04fcd2f308a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Render">
+      <UniqueIdentifier>{b36d9f7d-0742-4aa2-910e-a9488a22b1db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\common">
+      <UniqueIdentifier>{1a8213e5-1f7f-45c3-b12f-5f0a012a5284}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="matrix.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ray.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sphere.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="camera.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="material.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="utils.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="result.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="perf_timer.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="test.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="raytracer.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="scene.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="vector.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="vector_cuda.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="object_queue.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="thread_pool.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="spin_lock.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="test_ispc.h">
       <Filter>Source Files</Filter>
     </ClInclude>
-    <ClInclude Include="raytracer_ispc.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="camera.h">
+      <Filter>Source Files\Render</Filter>
     </ClInclude>
-    <ClInclude Include="msg_queue.h">
-      <Filter>Source Files</Filter>
+    <ClInclude Include="material.h">
+      <Filter>Source Files\Render</Filter>
     </ClInclude>
     <ClInclude Include="compute.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="event_object.h">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
     <ClInclude Include="compute_job.h">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="mandelbrot_compute_job.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="event_object.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="matrix.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="msg_queue.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="object_queue.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="perf_timer.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="raytracer.h">
+      <Filter>Source Files\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="raytracer_ispc.h">
+      <Filter>Source Files\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="ray.h">
+      <Filter>Source Files\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="scene.h">
+      <Filter>Source Files\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="spin_lock.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="result.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="sphere.h">
+      <Filter>Source Files\Render</Filter>
+    </ClInclude>
+    <ClInclude Include="thread_pool.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="vector.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="vector_cuda.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
+    <ClInclude Include="vulkan_utils.h">
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="pch.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="RayTracing.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sphere.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="perf_timer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="raytracer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="object_queue.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="thread_pool.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="msg_queue.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="thread_pool_tests.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="raytracer_vulkan.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="raytracer_simd.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="compute_job.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
     <ClCompile Include="compute_tests.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
     <ClCompile Include="compute.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
-    <ClCompile Include="compute_job.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="mandelbrot_compute_job.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClCompile>
+    <ClCompile Include="msg_queue.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="object_queue.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="perf_timer.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="raytracer.cpp">
+      <Filter>Source Files\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="raytracer_simd.cpp">
+      <Filter>Source Files\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="raytracer_vulkan.cpp">
+      <Filter>Source Files\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="sphere.cpp">
+      <Filter>Source Files\Render</Filter>
+    </ClCompile>
+    <ClCompile Include="thread_pool.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="thread_pool_tests.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="vulkan_utils.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="material.cu">
-      <Filter>Source Files</Filter>
-    </CudaCompile>
     <CudaCompile Include="test.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
-    <CudaCompile Include="utils.cu">
-      <Filter>Source Files</Filter>
+    <CudaCompile Include="material.cu">
+      <Filter>Source Files\Render</Filter>
     </CudaCompile>
     <CudaCompile Include="raytracer_cuda.cu">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\Render</Filter>
+    </CudaCompile>
+    <CudaCompile Include="utils.cu">
+      <Filter>Source Files\common</Filter>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
@@ -148,8 +169,15 @@
       <Filter>Source Files</Filter>
     </CustomBuild>
     <CustomBuild Include="raytracer.ispc">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\Render</Filter>
     </CustomBuild>
-    <CustomBuild Include="shaders\test_vulkan.comp" />
+    <CustomBuild Include="shaders\test_vulkan.comp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="mandelbrot.comp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </None>
   </ItemGroup>
 </Project>

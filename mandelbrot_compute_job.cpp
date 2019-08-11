@@ -1,4 +1,4 @@
-#include "compute_job.h"
+#include "mandelbrot_compute_job.h"
 
 #include "perf_timer.h"
 #include "utils.h"
@@ -10,13 +10,11 @@ namespace pk
 {
 
 //
-// Example Vulkan compute job.
-// You should copy and modify it to do something interesting.
+// This base class implements a basic Vulkan compute shader
+// It assumes one input (a uniform buffer)
+// and one output (a storage buffer)
 //
-// Assumes your compute shader has:
-// . entry point named main()
-// . single uniform buffer for input
-// . single storage buffer for output
+// Subclasses should override it to do something useful
 //
 
 // TODO: ComputeInstance should query the GPU for best workgroupSize and pass it to create()
@@ -25,38 +23,41 @@ static const uint32_t WORK_GROUP_SIZE = 32;
 // Instances of a compute job can share the same shader binary.
 // They might be able to share the same pipeline / command buffer,
 // but that means patching the I/O descriptors before enqueing to Vulkan.
-std::atomic<bool>     ComputeJob::firstInstance = true;
-std::atomic<uint32_t> ComputeJob::numInstances  = 0;
-std::string           ComputeJob::shaderPath          = "shaders\\test_vulkan.spv";
-VkShaderModule        ComputeJob::computeShaderModule = nullptr;
-VkDescriptorSetLayout ComputeJob::descriptorSetLayout;
-VkPipeline            ComputeJob::pipeline;
-VkPipelineLayout      ComputeJob::pipelineLayout;
+std::atomic<bool>     MandelbrotComputeJob::firstInstance = true;
+std::atomic<uint32_t> MandelbrotComputeJob::numInstances  = 0;
+//uint32_t              MandelbrotComputeJob::shaderLength        = 0;
+//uint32_t*             MandelbrotComputeJob::shaderBinary        = nullptr;
+std::string           MandelbrotComputeJob::shaderPath          = "shaders\\mandelbrot.spv";
+VkShaderModule        MandelbrotComputeJob::computeShaderModule = nullptr;
+VkDescriptorSetLayout MandelbrotComputeJob::descriptorSetLayout;
+VkPipeline            MandelbrotComputeJob::pipeline;
+VkPipelineLayout      MandelbrotComputeJob::pipelineLayout;
 
 // TODO: these never change (for a given pipeline) so should be
 // set at pipeline creation stage via Push Constants instead of passed as uniforms.
 struct UniformBufferObject {
     alignas( 4 ) uint32_t outputWidth;
     alignas( 4 ) uint32_t outputHeight;
+    alignas( 4 ) uint32_t maxIterations;
+    alignas( 4 ) bool applyGammaCorrection;
 };
 
-
 // factory method
-std::unique_ptr<ComputeJob> ComputeJob::create( compute_t hCompute )
+std::unique_ptr<MandelbrotComputeJob> MandelbrotComputeJob::create( compute_t hCompute )
 {
-    std::unique_ptr<ComputeJob> ptr( new ComputeJob( hCompute ) );
+    std::unique_ptr<MandelbrotComputeJob> ptr( new MandelbrotComputeJob( hCompute ) );
     return ptr;
 }
 
 
-// IComputeJob
-void ComputeJob::init()
+// IMandelbrotComputeJob
+void MandelbrotComputeJob::init()
 {
     // Create static resources shared by all shaders of this type
     if ( firstInstance ) {
         firstInstance = false;
 
-        printf( "ComputeJob[%d:%d]::create()\n", hCompute, handle );
+        printf( "MandelbrotComputeJob[%d:%d]::create()\n", hCompute, handle );
         //shaderBinary = VulkanUtils::loadShader( shaderPath, &shaderLength );
 
         //VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
@@ -88,9 +89,9 @@ void ComputeJob::init()
 }
 
 
-void ComputeJob::destroy()
+void MandelbrotComputeJob::destroy()
 {
-    //printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+    //printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
 
     if ( destroyed )
         return;
@@ -110,7 +111,7 @@ void ComputeJob::destroy()
 
     // Free the static resources shared by all instances
     if ( numInstances == 0 && pipeline ) {
-        printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+        printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
         vkDestroyShaderModule( device, computeShaderModule, nullptr );
         vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
         vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
@@ -123,13 +124,15 @@ void ComputeJob::destroy()
 }
 
 
-void ComputeJob::presubmit()
+void MandelbrotComputeJob::presubmit()
 {
-    //printf( "ComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
+    //printf( "MandelbrotComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
 
     struct UniformBufferObject ubo;
-    ubo.outputWidth  = outputWidth;
-    ubo.outputHeight = outputHeight;
+    ubo.outputWidth          = outputWidth;
+    ubo.outputHeight         = outputHeight;
+    ubo.maxIterations        = maxIterations;
+    ubo.applyGammaCorrection = enableGammaCorrection;
 
     void* data;
     vkMapMemory( device, uniformBufferMemory, 0, sizeof( ubo ), 0, &data );
@@ -138,13 +141,13 @@ void ComputeJob::presubmit()
 }
 
 
-void ComputeJob::submit()
+void MandelbrotComputeJob::submit()
 {
     if ( !commandBuffer ) {
         return;
     }
 
-    //printf( "ComputeJob[%d:%d]::submit()\n", hCompute, handle );
+    //printf( "MandelbrotComputeJob[%d:%d]::submit()\n", hCompute, handle );
 
     VkSubmitInfo submitInfo       = {};
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -156,26 +159,26 @@ void ComputeJob::submit()
 }
 
 
-void ComputeJob::postsubmit( uint32_t timeoutMS )
+void MandelbrotComputeJob::postsubmit( uint32_t timeoutMS )
 {
-    //printf( "ComputeJob[%d:%d]::postsubmit()\n", hCompute, handle );
+    //printf( "MandelbrotComputeJob[%d:%d]::postsubmit()\n", hCompute, handle );
 
     uint64_t timeoutNS = timeoutMS * 1000000;
     VkResult rval      = vkWaitForFences( device, 1, &fence, VK_TRUE, timeoutNS );
 
     if ( rval == VK_TIMEOUT ) {
-        printf( "ERROR: ComputeJob[%d:%d]: timeout (%d ms)\n", hCompute, handle, timeoutMS );
+        printf( "ERROR: MandelbrotComputeJob[%d:%d]: timeout (%d ms)\n", hCompute, handle, timeoutMS );
         return;
     }
 
     if ( rval != VK_SUCCESS ) {
-        printf( "ERROR: ComputeJob[%d:%d]: error %d\n", hCompute, handle, rval );
+        printf( "ERROR: MandelbrotComputeJob[%d:%d]: error %d\n", hCompute, handle, rval );
         return;
     }
 }
 
 
-void ComputeJob::save( const std::string outputPath )
+void MandelbrotComputeJob::save( const std::string outputPath )
 {
     printf( "Saving to %s\n", outputPath.c_str() );
 
@@ -225,12 +228,12 @@ void ComputeJob::save( const std::string outputPath )
 
 
 //
-// Private implementation
+// Private Implementation
 //
 
-bool ComputeJob::_createComputePipeline()
+bool MandelbrotComputeJob::_createComputePipeline()
 {
-    // Prevent race condition where ComputeJobs spawn on multiple threads, but only the first one
+    // Prevent race condition where MandelbrotComputeJobs spawn on multiple threads, but only the first one
     // is constructing the shader
     while ( !computeShaderModule ) {
     }
@@ -254,13 +257,13 @@ bool ComputeJob::_createComputePipeline()
 
     CHECK_VK( vkCreateComputePipelines( device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline ) );
 
-    printf( "ComputeJob[%d:%d]: created shader pipeline for [%s]\n", hCompute, handle, shaderPath.c_str() );
+    printf( "MandelbrotComputeJob[%d:%d]: created shader pipeline for [%s]\n", hCompute, handle, shaderPath.c_str() );
 
     return true;
 }
 
 
-bool ComputeJob::_recordCommandBuffer()
+bool MandelbrotComputeJob::_recordCommandBuffer()
 {
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType                       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -271,7 +274,7 @@ bool ComputeJob::_recordCommandBuffer()
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType                    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags                    = 0;
+    beginInfo.flags                    = 0; // VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     CHECK_VK( vkBeginCommandBuffer( commandBuffer, &beginInfo ) );
 
     vkCmdBindPipeline( commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline );
@@ -279,13 +282,13 @@ bool ComputeJob::_recordCommandBuffer()
     vkCmdDispatch( commandBuffer, workgroupWidth, workgroupHeight, workgroupDepth );
     CHECK_VK( vkEndCommandBuffer( commandBuffer ) );
 
-    //printf( "ComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", hCompute, handle, workgroupWidth, workgroupHeight, workgroupDepth );
+    //printf( "MandelbrotComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", hCompute, handle, workgroupWidth, workgroupHeight, workgroupDepth );
 
     return true;
 }
 
 
-bool ComputeJob::_createFence()
+bool MandelbrotComputeJob::_createFence()
 {
     VkFenceCreateInfo fenceCreateInfo = {};
     fenceCreateInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -301,7 +304,7 @@ bool ComputeJob::_createFence()
 // subclasses
 // *****************************************************************************
 
-bool ComputeJob::_createBuffers()
+bool MandelbrotComputeJob::_createBuffers()
 {
     outputBufferSize = outputWidth * outputHeight * 4 * sizeof( float );
     VulkanUtils::createBuffer( device, physicalDevice, outputBufferSize, &outputBuffer, &outputBufferMemory, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
@@ -313,7 +316,7 @@ bool ComputeJob::_createBuffers()
 }
 
 
-bool ComputeJob::_createDescriptorSetLayout()
+bool MandelbrotComputeJob::_createDescriptorSetLayout()
 {
     // Define the layout of shader resources
     // Can we assume all compute shaders will have one uniform input buffer and one storage output buffer?
@@ -341,13 +344,13 @@ bool ComputeJob::_createDescriptorSetLayout()
     createInfo.pBindings                       = bindings;
 
     CHECK_VK( vkCreateDescriptorSetLayout( device, &createInfo, nullptr, &descriptorSetLayout ) );
-    //printf( "ComputeJob[%d:%d]: defined %d descriptors\n", hCompute, handle, createInfo.bindingCount );
+    //printf( "MandelbrotComputeJob[%d:%d]: defined %d descriptors\n", hCompute, handle, createInfo.bindingCount );
 
     return true;
 }
 
 
-bool ComputeJob::_createDescriptorSet()
+bool MandelbrotComputeJob::_createDescriptorSet()
 {
     // Bind shader descriptors to buffers
 
@@ -360,10 +363,10 @@ bool ComputeJob::_createDescriptorSet()
     allocInfo.pSetLayouts                 = &descriptorSetLayout;
 
     CHECK_VK( vkAllocateDescriptorSets( device, &allocInfo, &descriptorSet ) );
-    //printf( "ComputeJob[%d:%d]: created %d descriptor sets\n", hCompute, handle, allocInfo.descriptorSetCount );
+    //printf( "MandelbrotComputeJob[%d:%d]: created %d descriptor sets\n", hCompute, handle, allocInfo.descriptorSetCount );
 
     if ( descriptorSet == 0 ) {
-        printf( "ERROR: ComputeJob[%d:%d] failed to alloc descriptors (pool exhausted?)\n", hCompute, handle );
+        printf( "ERROR: MandelbrotComputeJob[%d:%d] failed to alloc descriptors (pool exhausted?)\n", hCompute, handle );
         return false;
     }
 
@@ -395,8 +398,8 @@ bool ComputeJob::_createDescriptorSet()
     writeStorageSet.pBufferInfo          = &descriptorStorageBufferInfo;
     vkUpdateDescriptorSets( device, 1, &writeStorageSet, 0, nullptr );
 
-    //unsigned int numDescriptors = 2;
-    //printf( "ComputeJob[%d:%d]: bound %d descriptors\n", hCompute, handle, numDescriptors );
+    unsigned int numDescriptors = 2;
+    //printf( "MandelbrotComputeJob[%d:%d]: bound %d descriptors\n", hCompute, handle, numDescriptors );
 
     return true;
 }
