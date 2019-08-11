@@ -176,7 +176,7 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="mandelbrot.comp">
+    <None Include="shaders\mandelbrot.comp">
       <Filter>Source Files\ComputeJobs</Filter>
     </None>
   </ItemGroup>

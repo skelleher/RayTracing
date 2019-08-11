@@ -8,6 +8,8 @@
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1 ) in;
 
 layout(std140, binding = 0) uniform UniformBufferObject {
+    uint inputWidth;
+    uint inputHeight;
     uint outputWidth;
     uint outputHeight;
     uint maxIterations;
@@ -18,7 +20,13 @@ struct Pixel{
   vec4 value;
 };
 
-layout(std140, binding = 1) buffer buf
+layout(std140, binding = 1) buffer inputBuffer
+{
+    // Unused in this example
+    uint unused;
+};
+
+layout(std140, binding = 2) buffer outputBuffer
 {
    Pixel imageData[];
 };

@@ -174,11 +174,11 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
 
     // Bind the job to this device
     IComputeJobVulkan* _vkJob = dynamic_cast<IComputeJobVulkan*>( &job );
-    _vkJob->device         = cp.device;
-    _vkJob->physicalDevice = cp.physicalDevice;
-    _vkJob->descriptorPool = cp.descriptorPool;
-    _vkJob->commandPool    = cp.commandPool;
-    _vkJob->queue          = cp.queue;
+    _vkJob->vulkan.device         = cp.device;
+    _vkJob->vulkan.physicalDevice = cp.physicalDevice;
+    _vkJob->vulkan.descriptorPool = cp.descriptorPool;
+    _vkJob->vulkan.commandPool    = cp.commandPool;
+    _vkJob->vulkan.queue          = cp.queue;
     _job->init();
     assert( _job->handle != INVALID_COMPUTE_JOB );
 

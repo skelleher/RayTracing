@@ -56,11 +56,11 @@ protected:
 
     // All instances of IComputeJob must call the base class ctor / dtor
     // to ensure the ComputeInstance is acquired / released
-    IComputeJob( compute_t handle ) :
+    IComputeJob( compute_t hCompute ) :
         handle( IComputeJob::nextHandle++ ),
         cpuThreadHandle( INVALID_JOB )
     {
-        hCompute = handle;
+        this->hCompute = hCompute;
         computeAcquire( hCompute );
     }
 

@@ -5,6 +5,7 @@
 #include "compute_job.h"
 #include "spin_lock.h"
 #include "thread_pool.h"
+#include "vulkan_utils.h"
 
 #include <string>
 #include <vulkan/vulkan.h>
@@ -29,6 +30,8 @@ public:
 
     bool     enableGammaCorrection;
     uint32_t maxIterations;
+    uint32_t inputWidth;
+    uint32_t inputHeight;
     uint32_t outputWidth;
     uint32_t outputHeight;
     void     save( const std::string path );
@@ -41,11 +44,10 @@ protected:
     MandelbrotComputeJob( compute_t hCompute ) :
         IComputeJob( hCompute ),
         initialized( false ),
-        workgroupWidth( -1 ),
-        workgroupHeight( -1 ),
-        workgroupDepth( -1 ),
         enableGammaCorrection( false ),
         maxIterations( 128 ),
+        inputWidth( 1 ),
+        inputHeight( 1 ),
         outputWidth( 3200 ),
         outputHeight( 2400 )
     {
@@ -59,36 +61,25 @@ public:
         handle = INVALID_COMPUTE_JOB;
     }
 
-protected:
-    // *****************************************************************************
-    // Common members and utility methods
-    //
-    // These generally don't need to change, unless your compute shader does
-    // something unusual.
-    // *****************************************************************************
+    void _destroy();
 
-    // Shared by all instances of this shader
-    // NOTE: making these static assumes that all MandelbrotComputeJobs are never submitted to a different ComputeInstance
-    static std::atomic<bool>     firstInstance;
+protected:
     static std::atomic<uint32_t> numInstances;
-    static std::string           shaderPath;
-    static VkShaderModule        computeShaderModule;
-    static VkDescriptorSetLayout descriptorSetLayout;
-    static VkPipeline            pipeline;
-    static VkPipelineLayout      pipelineLayout;
 
-protected:
+    // *****************************************************************************
+    // The shader program (and descriptorSetLayout, pipeline, etc) are common
+    // to all instances of this shader
+    // *****************************************************************************
+    // NOTE: making this static assumes that all ComputeJobs of a given type are only submitted to the same ComputeInstance
+    static VulkanUtils::ComputeShaderProgram shaderProgram;
+
     // *****************************************************************************
     // Methods and members below are shader-specific
     // *****************************************************************************
-
     bool initialized;
     bool destroyed;
 
-    uint32_t workgroupSize;
-    uint32_t workgroupWidth;
-    uint32_t workgroupHeight;
-    uint32_t workgroupDepth;
+    VulkanUtils::ComputeShaderInstance shader;
 
     // Shader inputs
     VkBuffer       uniformBuffer;
@@ -100,17 +91,9 @@ protected:
     VkDeviceMemory outputBufferMemory;
     uint32_t       outputBufferSize;
 
-    VkDescriptorSet descriptorSet;
-    VkCommandBuffer commandBuffer;
-    VkFence         fence;
-
-    bool _createBuffers();
-    bool _createDescriptorSetLayout();
-    bool _createDescriptorSet();
-    bool _recordCommandBuffer();
-    bool _createComputePipeline();
-    bool _createFence();
-    void _destroy();
+    VkBuffer       inputBuffer;
+    VkDeviceMemory inputBufferMemory;
+    uint32_t       inputBufferSize;
 };
 
 } // namespace pk
