@@ -60,15 +60,11 @@ struct ComputeInstance {
 
 static std::mutex      s_compute_instances_mutex;
 static ComputeInstance s_compute_instances[ MAX_COMPUTE_INSTANCES ];
-//static ComputeInstance* s_compute_instances;
-//static unsigned         s_num_instances = 0;
-//static std::unique_ptr<ComputeInstance>* s_compute_instances;
-
 
 static bool     _valid( compute_t pool );
-static bool     _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice );
+static bool     _findPhysicalDevice( ComputeInstance& cp, unsigned device );
 static uint32_t _findComputeQueueFamilyIndex( ComputeInstance& cp );
-static bool     _initComputeInstance( ComputeInstance& cp, uint32_t preferredDevice, bool enableValidation );
+static bool     _initComputeInstance( ComputeInstance& cp, unsigned device, bool enableValidation );
 static bool     _destroyComputeInstance( ComputeInstance& cp );
 static bool     _createInstance( ComputeInstance& cp, bool enableValidation );
 static bool     _enableValidationLayers( ComputeInstance& cp );
@@ -89,8 +85,6 @@ result computeCreate( bool enableValidation )
     unsigned  numInstances = 0;
 
     std::lock_guard<std::mutex> lock( s_compute_instances_mutex );
-
-    //s_compute_instances = new std::unique_ptr<ComputeInstance>[ MAX_COMPUTE_INSTANCES ];
 
     // Initialize one ComputeInstance per GPU
     for ( int i = 0; i < MAX_COMPUTE_INSTANCES; i++ ) {
@@ -272,15 +266,17 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _debugReportCallbackFn(
 }
 
 
-static bool _initComputeInstance( ComputeInstance& cp, uint32_t preferredDevice, bool enableValidation )
+static bool _initComputeInstance( ComputeInstance& cp, unsigned device, bool enableValidation )
 {
-    _createInstance( cp, enableValidation );
-    _findPhysicalDevice( cp, preferredDevice );
-    _createLogicalDevice( cp );
-    _createDescriptorPool( cp );
-    _createCommandPool( cp );
+    bool rval = true;
 
-    return true;
+    rval &= _createInstance( cp, enableValidation );
+    rval &= _findPhysicalDevice( cp, device );
+    rval &= _createLogicalDevice( cp );
+    rval &= _createDescriptorPool( cp );
+    rval &= _createCommandPool( cp );
+
+    return rval;
 }
 
 
@@ -331,7 +327,7 @@ static bool _createInstance( ComputeInstance& cp, bool enableValidation )
 
     CHECK_VK( vkCreateInstance( &createInfo, nullptr, &cp.instance ) );
 
-    printf( "Compute[%d]: created Vulkan instance\n", cp.handle );
+    //printf( "Compute[%d]: created Vulkan instance\n", cp.handle );
 
     if ( cp.enableValidationLayers ) {
         VkDebugReportCallbackCreateInfoEXT createInfo = {};
@@ -394,13 +390,13 @@ static bool _enableValidationLayers( ComputeInstance& cp )
 
     cp.enabledExtensions.push_back( VK_EXT_DEBUG_REPORT_EXTENSION_NAME );
 
-    printf( "Compute[%d]: enabled validation layers\n", cp.handle );
+    //printf( "Compute[%d]: enabled validation layers\n", cp.handle );
 
     return foundLayer && foundExtension;
 }
 
 
-static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
+static bool _findPhysicalDevice( ComputeInstance& cp, unsigned device )
 {
     uint32_t numDevices = 0;
     vkEnumeratePhysicalDevices( cp.instance, &numDevices, nullptr );
@@ -418,22 +414,14 @@ static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
     VkPhysicalDevice           selectedDevice = nullptr;
     VkPhysicalDeviceProperties props          = {};
 
-    for ( VkPhysicalDevice device : devices ) {
-        vkGetPhysicalDeviceProperties( device, &props );
+    for ( VkPhysicalDevice dev : devices ) {
+        vkGetPhysicalDeviceProperties( dev, &props );
 
-        // Select the preferred device, if specified
-        if ( preferredDevice != -1 && deviceIndex == preferredDevice ) {
+        // Map ComputeIndex[N] to device N
+        if ( deviceIndex == device ) {
             cp.deviceName  = std::string( props.deviceName );
             deviceID       = props.deviceID;
-            selectedDevice = device;
-            found          = true;
-            break;
-        }
-        // Else, map ComputeIndex[N] to device[n]
-        if ( deviceIndex == cp.handle ) {
-            cp.deviceName  = std::string( props.deviceName );
-            deviceID       = props.deviceID;
-            selectedDevice = device;
+            selectedDevice = dev;
             found          = true;
             break;
         }
@@ -443,8 +431,7 @@ static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
     cp.physicalDevice = selectedDevice;
 
     if ( !found ) {
-        printf( "ERROR: Compute[%d]: found no physical device\n", cp.handle );
-        return R_FAIL;
+        return false;
     }
 
     printf( "Compute[%d]: using physical device %d [%s]\n", cp.handle, deviceID, cp.deviceName.c_str() );
@@ -481,12 +468,15 @@ static bool _findPhysicalDevice( ComputeInstance& cp, uint32_t preferredDevice )
     printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
     printf( "\tmaxStorageBufferRange = %d\n", props.limits.maxStorageBufferRange );
 
-    return R_OK;
+    return true;
 }
 
 
 static uint32_t _findComputeQueueFamilyIndex( ComputeInstance& cp )
 {
+    if ( !cp.physicalDevice )
+        return 0;
+
     uint32_t numQueueFamilies;
     vkGetPhysicalDeviceQueueFamilyProperties( cp.physicalDevice, &numQueueFamilies, nullptr );
     std::vector<VkQueueFamilyProperties> queueFamilies( numQueueFamilies );
@@ -518,6 +508,9 @@ static uint32_t _findComputeQueueFamilyIndex( ComputeInstance& cp )
 
 static bool _createLogicalDevice( ComputeInstance& cp )
 {
+    if ( !cp.physicalDevice )
+        return false;
+
     // Find the first command queue that supports compute shaders, and bind to a logical device
     VkDeviceQueueCreateInfo queueCreateInfo = {};
     queueCreateInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -544,6 +537,9 @@ static bool _createLogicalDevice( ComputeInstance& cp )
 
 static bool _createDescriptorPool( ComputeInstance& cp )
 {
+    if ( !cp.physicalDevice )
+        return false;
+
     VkDescriptorPoolSize uniformBufferPoolSize = {};
     uniformBufferPoolSize.type                 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uniformBufferPoolSize.descriptorCount      = MAX_JOBS * MAX_UNIFORM_BUFFERS_PER_JOB;
@@ -586,6 +582,9 @@ static bool _createDescriptorPool( ComputeInstance& cp )
 
 static bool _createCommandPool( ComputeInstance& cp )
 {
+    if ( !cp.physicalDevice )
+        return false;
+
     VkCommandPoolCreateInfo commandPoolCreateInfo = {};
     commandPoolCreateInfo.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandPoolCreateInfo.flags                   = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
