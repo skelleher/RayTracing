@@ -42,7 +42,6 @@ public:
     virtual void presubmit()                      = 0; // update share inputs / uniforms
     virtual void submit()                         = 0; // submit command buffer to queue; DO NOT BLOCK in this function
     virtual void postsubmit( uint32_t timeoutMS ) = 0; // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
-    virtual void destroy()                        = 0; // clean up resources
 
     // Mandatory members used by ComputeInstance
     SpinLock      spinLock;

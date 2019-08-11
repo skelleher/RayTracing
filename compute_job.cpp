@@ -88,41 +88,6 @@ void ComputeJob::init()
 }
 
 
-void ComputeJob::destroy()
-{
-    //printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
-
-    if ( destroyed )
-        return;
-
-    numInstances--;
-
-    SpinLockGuard lock( spinLock );
-
-    CHECK_VK( vkResetCommandBuffer( commandBuffer, 0 ) );
-    vkFreeCommandBuffers( device, commandPool, 1, &commandBuffer );
-    CHECK_VK( vkFreeDescriptorSets( device, descriptorPool, 1, &descriptorSet ) );
-    vkFreeMemory( device, outputBufferMemory, nullptr );
-    vkDestroyBuffer( device, outputBuffer, nullptr );
-    vkFreeMemory( device, uniformBufferMemory, nullptr );
-    vkDestroyBuffer( device, uniformBuffer, nullptr );
-    vkDestroyFence( device, fence, nullptr );
-
-    // Free the static resources shared by all instances
-    if ( numInstances == 0 && pipeline ) {
-        printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
-        vkDestroyShaderModule( device, computeShaderModule, nullptr );
-        vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
-        vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
-        vkDestroyPipeline( device, pipeline, nullptr );
-
-        pipeline = nullptr;
-    }
-
-    destroyed = true;
-}
-
-
 void ComputeJob::presubmit()
 {
     //printf( "ComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
@@ -399,6 +364,41 @@ bool ComputeJob::_createDescriptorSet()
     //printf( "ComputeJob[%d:%d]: bound %d descriptors\n", hCompute, handle, numDescriptors );
 
     return true;
+}
+
+
+void ComputeJob::_destroy()
+{
+    //printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+
+    if ( destroyed )
+        return;
+
+    numInstances--;
+
+    SpinLockGuard lock( spinLock );
+
+    CHECK_VK( vkResetCommandBuffer( commandBuffer, 0 ) );
+    vkFreeCommandBuffers( device, commandPool, 1, &commandBuffer );
+    CHECK_VK( vkFreeDescriptorSets( device, descriptorPool, 1, &descriptorSet ) );
+    vkFreeMemory( device, outputBufferMemory, nullptr );
+    vkDestroyBuffer( device, outputBuffer, nullptr );
+    vkFreeMemory( device, uniformBufferMemory, nullptr );
+    vkDestroyBuffer( device, uniformBuffer, nullptr );
+    vkDestroyFence( device, fence, nullptr );
+
+    // Free the static resources shared by all instances
+    if ( numInstances == 0 && pipeline ) {
+        printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+        vkDestroyShaderModule( device, computeShaderModule, nullptr );
+        vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
+        vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
+        vkDestroyPipeline( device, pipeline, nullptr );
+
+        pipeline = nullptr;
+    }
+
+    destroyed = true;
 }
 
 

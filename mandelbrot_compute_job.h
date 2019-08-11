@@ -26,7 +26,6 @@ public:
     virtual void presubmit();                      // update share inputs / uniforms
     virtual void submit();                         // submit command buffer to queue; DO NOT BLOCK in this function
     virtual void postsubmit( uint32_t timeoutMS ); // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
-    virtual void destroy();                        // clean up resources
 
     bool     enableGammaCorrection;
     uint32_t maxIterations;
@@ -56,7 +55,7 @@ protected:
 public:
     virtual ~MandelbrotComputeJob()
     {
-        destroy();
+        _destroy();
         handle = INVALID_COMPUTE_JOB;
     }
 
@@ -111,6 +110,7 @@ protected:
     bool _recordCommandBuffer();
     bool _createComputePipeline();
     bool _createFence();
+    void _destroy();
 };
 
 } // namespace pk

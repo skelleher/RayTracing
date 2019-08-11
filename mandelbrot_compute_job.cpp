@@ -89,41 +89,6 @@ void MandelbrotComputeJob::init()
 }
 
 
-void MandelbrotComputeJob::destroy()
-{
-    //printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
-
-    if ( destroyed )
-        return;
-
-    numInstances--;
-
-    SpinLockGuard lock( spinLock );
-
-    CHECK_VK( vkResetCommandBuffer( commandBuffer, 0 ) );
-    vkFreeCommandBuffers( device, commandPool, 1, &commandBuffer );
-    CHECK_VK( vkFreeDescriptorSets( device, descriptorPool, 1, &descriptorSet ) );
-    vkFreeMemory( device, outputBufferMemory, nullptr );
-    vkDestroyBuffer( device, outputBuffer, nullptr );
-    vkFreeMemory( device, uniformBufferMemory, nullptr );
-    vkDestroyBuffer( device, uniformBuffer, nullptr );
-    vkDestroyFence( device, fence, nullptr );
-
-    // Free the static resources shared by all instances
-    if ( numInstances == 0 && pipeline ) {
-        printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
-        vkDestroyShaderModule( device, computeShaderModule, nullptr );
-        vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
-        vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
-        vkDestroyPipeline( device, pipeline, nullptr );
-
-        pipeline = nullptr;
-    }
-
-    destroyed = true;
-}
-
-
 void MandelbrotComputeJob::presubmit()
 {
     //printf( "MandelbrotComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
@@ -402,6 +367,41 @@ bool MandelbrotComputeJob::_createDescriptorSet()
     //printf( "MandelbrotComputeJob[%d:%d]: bound %d descriptors\n", hCompute, handle, numDescriptors );
 
     return true;
+}
+
+
+void MandelbrotComputeJob::_destroy()
+{
+    //printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+
+    if ( destroyed )
+        return;
+
+    numInstances--;
+
+    SpinLockGuard lock( spinLock );
+
+    CHECK_VK( vkResetCommandBuffer( commandBuffer, 0 ) );
+    vkFreeCommandBuffers( device, commandPool, 1, &commandBuffer );
+    CHECK_VK( vkFreeDescriptorSets( device, descriptorPool, 1, &descriptorSet ) );
+    vkFreeMemory( device, outputBufferMemory, nullptr );
+    vkDestroyBuffer( device, outputBuffer, nullptr );
+    vkFreeMemory( device, uniformBufferMemory, nullptr );
+    vkDestroyBuffer( device, uniformBuffer, nullptr );
+    vkDestroyFence( device, fence, nullptr );
+
+    // Free the static resources shared by all instances
+    if ( numInstances == 0 && pipeline ) {
+        printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+        vkDestroyShaderModule( device, computeShaderModule, nullptr );
+        vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
+        vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
+        vkDestroyPipeline( device, pipeline, nullptr );
+
+        pipeline = nullptr;
+    }
+
+    destroyed = true;
 }
 
 
