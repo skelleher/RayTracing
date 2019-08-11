@@ -45,9 +45,9 @@ struct ComputeInstance {
     VkDescriptorPool         descriptorPool;
     VkCommandPool            commandPool;
 
-    uint32_t                                       maxJobs;
+    uint32_t                                        maxJobs;
     std::unordered_map<compute_job_t, IComputeJob*> activeJobs;
-    std::unordered_map<compute_job_t, Event>       activeJobEvents;
+    std::unordered_map<compute_job_t, Event>        activeJobEvents;
     std::unordered_map<compute_job_t, IComputeJob*> finishedJobs;
 
     ComputeInstance() :
@@ -114,15 +114,16 @@ result computeInit( bool enableValidation )
 
 compute_t computeAcquire( uint32_t device )
 {
-    std::lock_guard<std::mutex> lock( s_compute_instances_mutex );
     if ( device >= ARRAY_SIZE( s_compute_instances ) ) {
         printf( "ERROR: Compute[%d] is not a valid instance\n", device );
         return INVALID_COMPUTE_INSTANCE;
     }
 
-    s_compute_instances[ device ].refCount++;
+    ComputeInstance& cp = s_compute_instances[ device ];
+    SpinLockGuard compute_lock( cp.spinLock );
+    cp.refCount++;
 
-    return s_compute_instances[ device ].handle;
+    return cp.handle;
 }
 
 
@@ -164,7 +165,7 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     ComputeInstance& cp = s_compute_instances[ handle ];
     SpinLockGuard    compute_lock( cp.spinLock );
 
-    IComputeJob*   _job = dynamic_cast<IComputeJob*>( &job );
+    IComputeJob*  _job = dynamic_cast<IComputeJob*>( &job );
     SpinLockGuard job_lock( _job->spinLock );
 
     if ( _job->hCompute != cp.handle ) {
@@ -173,7 +174,7 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     }
 
     // Bind the job to this device
-    IComputeJobVulkan* _vkJob = dynamic_cast<IComputeJobVulkan*>( &job );
+    IComputeJobVulkan* _vkJob     = dynamic_cast<IComputeJobVulkan*>( &job );
     _vkJob->vulkan.device         = cp.device;
     _vkJob->vulkan.physicalDevice = cp.physicalDevice;
     _vkJob->vulkan.descriptorPool = cp.descriptorPool;
