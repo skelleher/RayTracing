@@ -12,7 +12,8 @@
 namespace pk
 {
 
-// Base class for compute jobs that may be submitted to a ComputeInstance.
+//
+// Base class for Vulkan compute jobs.
 //
 // Assumes your compute shader has:
 // . entry point named main()
@@ -22,15 +23,14 @@ namespace pk
 
 class ComputeJob : public virtual IComputeJob {
 public:
-    virtual void create();                         // allocate resources: load shader; allocate buffers, bind descriptors
+    static std::unique_ptr<ComputeJob> create( compute_t hCompute ); // factory method
+
+    // IComputeJob
+    virtual void init();                           // allocate resources: load shader; allocate buffers, bind descriptors
     virtual void presubmit();                      // update share inputs / uniforms
     virtual void submit();                         // submit command buffer to queue; DO NOT BLOCK in this function
     virtual void postsubmit( uint32_t timeoutMS ); // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
     virtual void destroy();                        // clean up resources
-
-    SpinLock      spinLock;
-    compute_job_t handle;
-    job_t         cpu_thread_handle;
 
     // TEST:
     void     save( const std::string path );
@@ -43,17 +43,19 @@ public:
     uint32_t postsubmitCount;
 
     // Inherited from the owning ComputeInstance:
-    compute_t        instance;
+    compute_t        hCompute;
     VkDevice         device;
     VkPhysicalDevice physicalDevice;
     VkDescriptorPool descriptorPool;
     VkCommandPool    commandPool;
     VkQueue          queue;
 
-    ComputeJob() :
-        handle( IComputeJob::nextHandle++ ),
-        cpu_thread_handle( INVALID_JOB ),
-        created( false ),
+protected:
+    ComputeJob( const ComputeJob& ) = delete;
+    ComputeJob& operator=( const ComputeJob& ) = delete;
+
+    ComputeJob( compute_t hCompute ) :
+        initialized( false ),
         workgroupWidth( -1 ),
         workgroupHeight( -1 ),
         workgroupDepth( -1 ),
@@ -61,21 +63,19 @@ public:
         enableGammaCorrection( false ),
         maxIterations( 128 ),
         outputWidth( 3200 ),
-        outputHeight( 2400 ),
-        submitCount( 0 ),
-        presubmitCount( 0 ),
-        postsubmitCount( 0 )
+        outputHeight( 2400 )
     {
         numInstances++;
+        this->hCompute = hCompute;
+        computeAcquire( hCompute );
     }
 
+public:
     virtual ~ComputeJob()
     {
-        assert( submitCount == 1 );
-
-        numInstances--;
         destroy();
         handle = INVALID_COMPUTE_JOB;
+        computeRelease( hCompute );
     }
 
 protected:
@@ -86,7 +86,7 @@ protected:
     // something unusual.
     // *****************************************************************************
 
-    // Shared by all instances of this shader
+    // Shared by all hComputes of this shader
     // NOTE: making these static assumes that all ComputeJobs of a given type are never submitted to a different ComputeInstance
     static std::atomic<bool>     firstInstance;
     static std::atomic<uint32_t> numInstances;
@@ -98,9 +98,9 @@ protected:
     static VkPipeline            pipeline;
     static VkPipelineLayout      pipelineLayout;
 
-    // One per instance / invokation
+    // One per hCompute / invokation
     VkFence fence;
-    bool    created;
+    bool    initialized;
 
     // Caller must delete[] the returned shader buffer
     uint32_t* _loadShader( const std::string& shaderPath, uint32_t* pShaderLength );

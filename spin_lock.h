@@ -26,9 +26,9 @@ public:
         _lock.clear( std::memory_order_release );
     }
 
-    SpinLock() = default;
-    SpinLock(const SpinLock& rhs) = delete;
-    SpinLock& operator=(const SpinLock& rhs) = delete;
+    SpinLock()                      = default;
+    SpinLock( const SpinLock& rhs ) = delete;
+    SpinLock& operator=( const SpinLock& rhs ) = delete;
 };
 
 
@@ -45,8 +45,8 @@ public:
         m_lock.release();
     }
 
-    SpinLockGuard(const SpinLockGuard& rhs) = delete;
-    SpinLockGuard& operator=(const SpinLock& rhs) = delete;
+    SpinLockGuard( const SpinLockGuard& rhs ) = delete;
+    SpinLockGuard& operator=( const SpinLock& rhs ) = delete;
 
 private:
     SpinLock& m_lock;

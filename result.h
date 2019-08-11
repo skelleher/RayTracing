@@ -7,12 +7,13 @@ typedef enum {
     R_OK   = 0,
     R_FAIL = 1,
 
-    R_INVALID_ARG     = 2,
-    R_NOTIMPL         = 3,
-    R_NULL_POINTER    = 4,
-    R_INVALID_VERSION = 5,
-    R_TIMEOUT         = 6,
-    R_QUEUE_FULL      = 7,
+    R_INVALID_ARG       = 2,
+    R_NOTIMPL           = 3,
+    R_NULL_POINTER      = 4,
+    R_INVALID_VERSION   = 5,
+    R_TIMEOUT           = 6,
+    R_QUEUE_FULL        = 7,
+    R_INVALID_OPERATION = 8,
 } result;
 
 

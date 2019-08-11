@@ -41,14 +41,24 @@ struct UniformBufferObject {
     alignas( 4 ) bool applyGammaCorrection;
 };
 
+// factory method
+std::unique_ptr<ComputeJob> ComputeJob::create( compute_t hCompute )
+{
+    std::unique_ptr<ComputeJob> ptr( new ComputeJob( hCompute ) );
+    return ptr;
+}
 
-void ComputeJob::create()
+
+// IComputeJob
+void ComputeJob::init()
 {
     // Create static resources shared by all shaders of this type
     if ( firstInstance ) {
-        firstInstance = false; // TODO: race condition
+        firstInstance = false;
 
-        printf( "ComputeJob[%d:%d]::create()\n", instance, handle );
+        //computeAcquire( hCompute );
+
+        printf( "ComputeJob[%d:%d]::create()\n", hCompute, handle );
         shaderBinary = _loadShader( shaderPath, &shaderLength );
 
         VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
@@ -62,33 +72,30 @@ void ComputeJob::create()
         _createComputePipeline();
     }
 
-
     workgroupSize   = WORK_GROUP_SIZE;
     workgroupWidth  = (uint32_t)ceil( outputWidth / (float)workgroupSize );
     workgroupHeight = (uint32_t)ceil( outputHeight / (float)workgroupSize );
     workgroupDepth  = 1;
 
-    if ( !created ) {
+    if ( !initialized ) {
         _createBuffers();
         _createDescriptorSet();
         _recordCommandBuffer();
         _createFence();
 
-        created = true;
+        //computeRelease( hCompute );
+        initialized = true;
     }
 }
 
 
 void ComputeJob::destroy()
 {
-    //printf( "ComputeJob[%d:%d]::destroy()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+
+    numInstances--;
 
     SpinLockGuard lock( spinLock );
-
-    // Check for job being invoked by more than one thread
-    assert( presubmitCount <= 1 );
-    assert( submitCount <= 1 );
-    assert( postsubmitCount <= 1 );
 
     CHECK_VK( vkResetCommandBuffer( commandBuffer, 0 ) );
     vkFreeCommandBuffers( device, commandPool, 1, &commandBuffer );
@@ -101,7 +108,7 @@ void ComputeJob::destroy()
 
     // Free the static resources shared by all instances
     if ( numInstances == 0 && pipeline ) {
-        printf( "ComputeJob[%d:%d]::destroy()\n", instance, handle );
+        printf( "ComputeJob[%d:%d]::destroy()\n", hCompute, handle );
         vkDestroyShaderModule( device, computeShaderModule, nullptr );
         vkDestroyDescriptorSetLayout( device, descriptorSetLayout, nullptr );
         vkDestroyPipelineLayout( device, pipelineLayout, nullptr );
@@ -114,9 +121,7 @@ void ComputeJob::destroy()
 
 void ComputeJob::presubmit()
 {
-    presubmitCount++;
-
-    //printf( "ComputeJob[%d:%d]::presubmit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
 
     struct UniformBufferObject ubo;
     ubo.outputWidth          = outputWidth;
@@ -133,13 +138,11 @@ void ComputeJob::presubmit()
 
 void ComputeJob::submit()
 {
-    submitCount++;
-
     if ( !commandBuffer ) {
         return;
     }
 
-    //printf( "ComputeJob[%d:%d]::submit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::submit()\n", hCompute, handle );
 
     VkSubmitInfo submitInfo       = {};
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -153,23 +156,22 @@ void ComputeJob::submit()
 
 void ComputeJob::postsubmit( uint32_t timeoutMS )
 {
-    postsubmitCount++;
-
-    //printf( "ComputeJob[%d:%d]::postsubmit()\n", instance, handle );
+    //printf( "ComputeJob[%d:%d]::postsubmit()\n", hCompute, handle );
 
     uint64_t timeoutNS = timeoutMS * 1000000;
     VkResult rval      = vkWaitForFences( device, 1, &fence, VK_TRUE, timeoutNS );
 
     if ( rval == VK_TIMEOUT ) {
-        printf( "ERROR: ComputeJob[%d:%d]: timeout (%d ms)\n", instance, handle, timeoutMS );
+        printf( "ERROR: ComputeJob[%d:%d]: timeout (%d ms)\n", hCompute, handle, timeoutMS );
         return;
     }
 
     if ( rval != VK_SUCCESS ) {
-        printf( "ERROR: ComputeJob[%d:%d]: error %d\n", instance, handle, rval );
+        printf( "ERROR: ComputeJob[%d:%d]: error %d\n", hCompute, handle, rval );
         return;
     }
 }
+
 
 void ComputeJob::save( const std::string outputPath )
 {
@@ -255,7 +257,7 @@ uint32_t* ComputeJob::_loadShader( const std::string& shaderPath, uint32_t* pSha
         *pShaderLength = (uint32_t)padded;
     }
 
-    printf( "ComputeJob[%d:%d]: loaded %zd bytes of shader (padded to %zd)\n", instance, handle, filesize, padded );
+    printf( "ComputeJob[%d:%d]: loaded %zd bytes of shader (padded to %zd)\n", hCompute, handle, filesize, padded );
 
     return buffer;
 }
@@ -297,7 +299,7 @@ bool ComputeJob::_createBuffer( VkDevice device, VkPhysicalDevice physicalDevice
     CHECK_VK( vkAllocateMemory( device, &allocateInfo, nullptr, pBufferMemory ) );
     CHECK_VK( vkBindBufferMemory( device, *pBuffer, *pBufferMemory, 0 ) );
 
-    //printf( "ComputeJob[%d:%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", instance, handle, bufferSize, usage, properties );
+    //printf( "ComputeJob[%d:%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", hCompute, handle, bufferSize, usage, properties );
 
     return true;
 }
@@ -329,7 +331,7 @@ bool ComputeJob::_createComputePipeline()
 
     CHECK_VK( vkCreateComputePipelines( device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline ) );
 
-    printf( "ComputeJob[%d:%d]: created shader pipeline for [%s]\n", instance, handle, shaderPath.c_str() );
+    printf( "ComputeJob[%d:%d]: created shader pipeline for [%s]\n", hCompute, handle, shaderPath.c_str() );
 
     return true;
 }
@@ -354,7 +356,7 @@ bool ComputeJob::_recordCommandBuffer()
     vkCmdDispatch( commandBuffer, workgroupWidth, workgroupHeight, workgroupDepth );
     CHECK_VK( vkEndCommandBuffer( commandBuffer ) );
 
-    //printf( "ComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", instance, handle, workgroupWidth, workgroupHeight, workgroupDepth );
+    //printf( "ComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", hCompute, handle, workgroupWidth, workgroupHeight, workgroupDepth );
 
     return true;
 }
@@ -416,7 +418,7 @@ bool ComputeJob::_createDescriptorSetLayout()
     createInfo.pBindings                       = bindings;
 
     CHECK_VK( vkCreateDescriptorSetLayout( device, &createInfo, nullptr, &descriptorSetLayout ) );
-    //printf( "ComputeJob[%d:%d]: defined %d descriptors\n", instance, handle, createInfo.bindingCount );
+    //printf( "ComputeJob[%d:%d]: defined %d descriptors\n", hCompute, handle, createInfo.bindingCount );
 
     return true;
 }
@@ -435,10 +437,10 @@ bool ComputeJob::_createDescriptorSet()
     allocInfo.pSetLayouts                 = &descriptorSetLayout;
 
     CHECK_VK( vkAllocateDescriptorSets( device, &allocInfo, &descriptorSet ) );
-    //printf( "ComputeJob[%d:%d]: created %d descriptor sets\n", instance, handle, allocInfo.descriptorSetCount );
+    //printf( "ComputeJob[%d:%d]: created %d descriptor sets\n", hCompute, handle, allocInfo.descriptorSetCount );
 
     if ( descriptorSet == 0 ) {
-        printf( "ERROR: ComputeJob[%d:%d] failed to alloc descriptors (pool exhausted?)\n", instance, handle );
+        printf( "ERROR: ComputeJob[%d:%d] failed to alloc descriptors (pool exhausted?)\n", hCompute, handle );
         return false;
     }
 
@@ -471,7 +473,7 @@ bool ComputeJob::_createDescriptorSet()
     vkUpdateDescriptorSets( device, 1, &writeStorageSet, 0, nullptr );
 
     unsigned int numDescriptors = 2;
-    //printf( "ComputeJob[%d:%d]: bound %d descriptors\n", instance, handle, numDescriptors );
+    //printf( "ComputeJob[%d:%d]: bound %d descriptors\n", hCompute, handle, numDescriptors );
 
     return true;
 }

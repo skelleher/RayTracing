@@ -1,4 +1,5 @@
 #include "compute.h"
+
 #include "compute_job.h"
 #include "event_object.h"
 #include "object_queue.h"
@@ -26,9 +27,10 @@ static const int MAX_COMPUTE_JOB_TIMEOUT_MS  = 60 * 1000; // Don't allow compute
 std::atomic<compute_job_t> IComputeJob::nextHandle = 0;
 
 struct ComputeInstance {
-    SpinLock    spinLock;
-    compute_t   handle;
-    std::string deviceName;
+    std::atomic<uint64_t> refCount;
+    SpinLock              spinLock;
+    compute_t             handle;
+    std::string           deviceName;
 
     bool                     enableValidationLayers;
     std::vector<const char*> enabledLayers;
@@ -43,12 +45,13 @@ struct ComputeInstance {
     VkDescriptorPool         descriptorPool;
     VkCommandPool            commandPool;
 
-    uint32_t                                             maxJobs;
+    uint32_t                                       maxJobs;
     std::unordered_map<compute_job_t, ComputeJob*> activeJobs;
-    std::unordered_map<compute_job_t, Event>             activeJobEvents;
+    std::unordered_map<compute_job_t, Event>       activeJobEvents;
     std::unordered_map<compute_job_t, ComputeJob*> finishedJobs;
 
     ComputeInstance() :
+        refCount( 0 ),
         handle( INVALID_COMPUTE_INSTANCE ),
         enableValidationLayers( false )
     {
@@ -57,6 +60,9 @@ struct ComputeInstance {
 
 static std::mutex      s_compute_instances_mutex;
 static ComputeInstance s_compute_instances[ MAX_COMPUTE_INSTANCES ];
+//static ComputeInstance* s_compute_instances;
+//static unsigned         s_num_instances = 0;
+//static std::unique_ptr<ComputeInstance>* s_compute_instances;
 
 
 static bool     _valid( compute_t pool );
@@ -77,41 +83,70 @@ static void     _computeJobMarkFinished( ComputeJob* job );
 //  Public
 //
 
-compute_t computeCreate( bool enableValidation, uint32_t preferredDevice )
+result computeCreate( bool enableValidation )
 {
-    ComputeInstance* cp     = nullptr;
-    compute_t        handle = INVALID_COMPUTE_INSTANCE;
+    compute_t handle       = INVALID_COMPUTE_INSTANCE;
+    unsigned  numInstances = 0;
 
     std::lock_guard<std::mutex> lock( s_compute_instances_mutex );
 
-    for ( int i = 0; i < ARRAY_SIZE( s_compute_instances ); i++ ) {
+    //s_compute_instances = new std::unique_ptr<ComputeInstance>[ MAX_COMPUTE_INSTANCES ];
+
+    // Initialize one ComputeInstance per GPU
+    for ( int i = 0; i < MAX_COMPUTE_INSTANCES; i++ ) {
         SpinLockGuard lock( s_compute_instances[ i ].spinLock );
 
-        if ( s_compute_instances[ i ].handle == INVALID_COMPUTE_INSTANCE ) {
-            cp         = &s_compute_instances[ i ];
-            handle     = (compute_t)i;
-            cp->handle = handle;
-            break;
+        ComputeInstance& cp = s_compute_instances[ i ];
+
+        if ( cp.handle == INVALID_COMPUTE_INSTANCE ) {
+            handle    = (compute_t)i;
+            cp.handle = handle;
+
+            if ( !_initComputeInstance( cp, i, enableValidation ) ) {
+                cp.handle = INVALID_COMPUTE_INSTANCE;
+                continue;
+            }
+
+            numInstances++;
         }
     }
 
-    if ( !cp ) {
-        printf( "ERROR: Compute: max instances created\n" );
+    if ( !numInstances )
+        printf( "ERROR: computeCreate(): found no Vulkan device\n" );
+
+    return numInstances > 0 ? R_OK : R_FAIL;
+}
+
+
+compute_t computeAcquire( uint32_t device )
+{
+    std::lock_guard<std::mutex> lock( s_compute_instances_mutex );
+    if ( device >= ARRAY_SIZE( s_compute_instances ) ) {
+        printf( "ERROR: Compute[%d] is not a valid instance\n", device );
         return INVALID_COMPUTE_INSTANCE;
     }
 
-    SpinLockGuard spinlock( cp->spinLock );
+    s_compute_instances[ device ].refCount++;
 
-    if ( !_initComputeInstance( *cp, preferredDevice, enableValidation ) ) {
-        printf( "ERROR: Compute[%d]: create FAIL\n", handle );
-        s_compute_instances[ handle ].handle = INVALID_COMPUTE_INSTANCE;
+    return s_compute_instances[ device ].handle;
+}
 
-        return INVALID_COMPUTE_INSTANCE;
+
+result computeRelease( compute_t handle )
+{
+    if ( !_valid( handle ) )
+        return R_FAIL;
+
+    ComputeInstance& cp = s_compute_instances[ handle ];
+    SpinLockGuard    compute_lock( cp.spinLock );
+    cp.refCount--;
+
+    if ( cp.refCount == 0 ) {
+        if ( !_destroyComputeInstance( cp ) )
+            return R_FAIL;
     }
 
-    printf( "\n" );
-
-    return handle;
+    return R_OK;
 }
 
 
@@ -135,18 +170,21 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     ComputeInstance& cp = s_compute_instances[ handle ];
     SpinLockGuard    compute_lock( cp.spinLock );
 
-    ComputeJob* _job = dynamic_cast<ComputeJob*>( &job );
-    SpinLockGuard     job_lock( _job->spinLock );
+    ComputeJob*   _job = dynamic_cast<ComputeJob*>( &job );
+    SpinLockGuard job_lock( _job->spinLock );
 
-    // Bind the job to this compute instance
+    if ( _job->hCompute != cp.handle ) {
+        printf( "ERROR: Compute[%d] submitJob: job %d was not created on this device\n", cp.handle, _job->handle );
+        return INVALID_COMPUTE_JOB;
+    }
+
+    // Bind the job to this device
     _job->device         = cp.device;
     _job->physicalDevice = cp.physicalDevice;
     _job->descriptorPool = cp.descriptorPool;
     _job->commandPool    = cp.commandPool;
     _job->queue          = cp.queue;
-    _job->instance       = cp.handle;
-
-    _job->create();
+    _job->init();
     assert( _job->handle != INVALID_COMPUTE_JOB );
 
     // Remove job from the finished list (it is normal to allocate a job once and re-submit it frequently)
@@ -154,8 +192,8 @@ compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
     cp.activeJobs[ _job->handle ] = _job;
     cp.activeJobEvents[ _job->handle ].reset();
 
-    _job->cpu_thread_handle = threadPoolSubmitJob( Function( _executeComputeJob, _job ) );
-    if ( _job->cpu_thread_handle == INVALID_JOB ) {
+    _job->cpuThreadHandle = threadPoolSubmitJob( Function( _executeComputeJob, _job ) );
+    if ( _job->cpuThreadHandle == INVALID_JOB ) {
         printf( "ERROR: Compute[%d]: submitJob failed\n", cp.handle );
         _job->handle = INVALID_COMPUTE_JOB;
     }
@@ -204,29 +242,13 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
 }
 
 
-result computeDestroy( compute_t handle )
-{
-    if ( !_valid( handle ) )
-        return R_FAIL;
-
-    ComputeInstance& cp = s_compute_instances[ handle ];
-    SpinLockGuard    lock( cp.spinLock );
-
-    if ( _destroyComputeInstance( cp ) ) {
-        return R_OK;
-    } else {
-        return R_FAIL;
-    }
-}
-
-
 //
 // Private implementation; this will fork if we ever support Metal
 //
 
 static bool _valid( compute_t handle )
 {
-    if ( handle == INVALID_COMPUTE_INSTANCE || handle >= ARRAY_SIZE( s_compute_instances ) ) {
+    if ( handle == INVALID_COMPUTE_INSTANCE || handle >= ARRAY_SIZE( s_compute_instances ) || s_compute_instances[ handle ].handle == INVALID_COMPUTE_INSTANCE ) {
         return false;
     }
 
@@ -579,7 +601,8 @@ static bool _createCommandPool( ComputeInstance& cp )
 static bool _executeComputeJob( void* context, uint32_t tid )
 {
     ComputeJob* job = (ComputeJob*)context;
-    ComputeInstance&  cp  = s_compute_instances[ job->instance ];
+    assert( job->hCompute < ARRAY_SIZE( s_compute_instances ) );
+    ComputeInstance& cp = s_compute_instances[ job->hCompute ];
     assert( job->handle != INVALID_COMPUTE_JOB );
 
     //printf( "Compute[%d]: execute job %d\n", job->instance, job->handle );
@@ -601,9 +624,9 @@ static bool _executeComputeJob( void* context, uint32_t tid )
 
 static void _computeJobMarkFinished( ComputeJob* job )
 {
-    assert( job->instance < ARRAY_SIZE( s_compute_instances ) );
+    assert( job->hCompute < ARRAY_SIZE( s_compute_instances ) );
 
-    ComputeInstance& cp = s_compute_instances[ job->instance ];
+    ComputeInstance& cp = s_compute_instances[ job->hCompute ];
 
     cp.spinLock.lock();
     cp.finishedJobs[ job->handle ] = job;
