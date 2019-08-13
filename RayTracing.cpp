@@ -3,6 +3,7 @@
 
 #include "argsparser.h"
 #include "camera.h"
+#include "compute.h"
 #include "material.h"
 #include "msg_queue.h"
 #include "perf_timer.h"
@@ -36,6 +37,13 @@ const unsigned int MAX_RAY_DEPTH = 5;
 
 static Scene* _randomScene();
 
+typedef enum {
+    RENDER_MODE_CPU    = 0,
+    RENDER_MODE_CUDA   = 1,
+    RENDER_MODE_ISPC   = 2,
+    RENDER_MODE_VULKAN = 3,
+} render_mode_t;
+
 //
 // Simple Ray Tracer
 //
@@ -47,12 +55,11 @@ int main( int argc, char** argv )
     //
     ArgsParser args( argc, argv );
 
-    bool ispc = false;
-    //bool cuda = true;
-    bool cuda = false;
+    //render_mode_t mode = RENDER_MODE_CPU;
+    render_mode_t mode = RENDER_MODE_VULKAN;
+
     if ( args.cmdOptionExists( "-c" ) ) {
-        cuda = !cuda;
-        ispc = false;
+        mode = RENDER_MODE_CUDA;
     }
 
     int aaSamples = NUM_AA_SAMPLES;
@@ -61,7 +68,7 @@ int main( int argc, char** argv )
         aaSamples              = std::stoi( arg );
     }
 
-    int blockSize = cuda ? 16 : 64;
+    int blockSize = mode == RENDER_MODE_CUDA ? 16 : 64;
     if ( args.cmdOptionExists( "-b" ) ) {
         const std::string& arg = args.getCmdOption( "-b" );
         blockSize              = std::stoi( arg );
@@ -78,8 +85,7 @@ int main( int argc, char** argv )
     }
 
     if ( args.cmdOptionExists( "-i" ) ) {
-        ispc = true;
-        cuda = false;
+        mode = RENDER_MODE_ISPC;
     }
 
     int maxBounce = MAX_RAY_DEPTH;
@@ -88,15 +94,15 @@ int main( int argc, char** argv )
         maxBounce              = std::stoi( arg );
     }
 
-    bool recursive = false;
-    if ( args.cmdOptionExists( "-r" ) ) {
-        recursive = true;
-    }
-
     int numThreads = std::thread::hardware_concurrency() - 1;
     if ( args.cmdOptionExists( "-t" ) ) {
         const std::string& arg = args.getCmdOption( "-t" );
         numThreads             = std::stoi( arg );
+    }
+
+    bool enableTests = false;
+    if ( args.cmdOptionExists( "-test" ) ) {
+        enableTests = true;
     }
 
     int preferredDevice = -1;
@@ -105,12 +111,17 @@ int main( int argc, char** argv )
         preferredDevice        = std::stoi( arg );
     }
 
+    if ( args.cmdOptionExists( "-v" ) ) {
+        mode = RENDER_MODE_VULKAN;
+    }
+
     bool enableValidation = false;
 #ifdef _DEBUG
     enableValidation = true;
 #endif
-    if ( args.cmdOptionExists( "-v" ) ) {
+    if ( args.cmdOptionExists( "-vv" ) ) {
         enableValidation = true;
+        mode             = RENDER_MODE_VULKAN;
     }
 
     //
@@ -119,8 +130,15 @@ int main( int argc, char** argv )
     thread_pool_t tp = threadPoolCreate( numThreads );
     printf( "Created [%d:%d] threads\n", tp, numThreads );
 
-    testCompute( preferredDevice, enableValidation );
-    return 0;
+    //
+    // Enable GPU Compute
+    //
+    computeInit( enableValidation );
+
+    if ( enableTests ) {
+        testCompute( preferredDevice, enableValidation );
+        return 0;
+    }
 
     //
     // Define the scene and camera
@@ -144,7 +162,7 @@ int main( int argc, char** argv )
     // TODO: floating point instead of 8-bit RGB
     //
     uint32_t* frameBuffer = nullptr;
-    if ( cuda ) {
+    if ( mode == RENDER_MODE_CUDA ) {
         CHECK_CUDA( cudaMallocManaged( (void**)&frameBuffer, ROWS * COLS * sizeof( uint32_t ) ) );
     } else {
         frameBuffer = new uint32_t[ ROWS * COLS ];
@@ -160,13 +178,21 @@ int main( int argc, char** argv )
         return -1;
     }
 
-    if ( cuda ) {
-        renderSceneCUDA( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
-    } else if ( ispc ) {
-        renderSceneISPC( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
-    } else {
-        renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, recursive );
+
+    switch ( mode ) {
+        case RENDER_MODE_CUDA:
+            renderSceneCUDA( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
+            break;
+        case RENDER_MODE_ISPC:
+            renderSceneISPC( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
+            break;
+        case RENDER_MODE_VULKAN:
+            renderSceneVulkan( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
+            break;
+        default:
+            renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
     }
+
 
     //
     // Save image
@@ -191,7 +217,7 @@ int main( int argc, char** argv )
 
     delete scene;
 
-    if ( cuda ) {
+    if ( mode == RENDER_MODE_CUDA ) {
         CHECK_CUDA( cudaFree( frameBuffer ) );
         CHECK_CUDA( cudaDeviceReset() );
     } else {

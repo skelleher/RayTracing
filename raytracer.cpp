@@ -57,7 +57,7 @@ static vector3 _background( const ray& r );
 static bool    _renderJob( void* context, uint32_t tid );
 
 
-int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, bool recursive )
+int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug )
 {
     PerfTimer t;
 
@@ -113,7 +113,7 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
             ctx->blockCount          = &blockCount;
             ctx->totalBlocks         = numBlocks;
             ctx->debug               = debug;
-            ctx->recursive           = recursive;
+            ctx->recursive           = false;
 
             threadPoolSubmitJob( Function(_renderJob, ctx) );
 

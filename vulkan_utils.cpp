@@ -4,6 +4,7 @@
 
 #include "vulkan_utils.h"
 
+#include "compute_buffer_vulkan.h"
 #include "utils.h"
 
 #include <assert.h>
@@ -15,156 +16,35 @@ namespace pk
 
 static uint32_t  _findMemoryType( VkPhysicalDevice physicalDevice, uint32_t type, VkMemoryPropertyFlags properties );
 static uint32_t* _loadShader( const std::string& shaderPath, uint32_t* pShaderLength );
+static result    _createShaderBuffers( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _createBuffers( VulkanContext& context, IComputeBuffer** ppBuffers, uint32_t count );
+static result    _createBuffer( VulkanContext& context, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties );
+static result    _createDescriptorSetLayout( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _createDescriptorSet( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _createComputeShaderProgram( VulkanContext& context, VulkanUtils::ComputeShaderProgram* pComputeShaderProgram );
+static result    _createComputePipeline( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _bindBuffers( VulkanContext& context, IComputeBuffer** ppBuffers, uint32_t count, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _recordCommandBuffer( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
+static result    _createFence( VulkanContext& context, VulkanUtils::ComputeShaderInstance* pComputeShader );
 
 
 // Create and bind the shader program, buffers, descriptors, layouts, and pipeline
-result VulkanUtils::createComputeShader( VulkanContext& vulkan, ComputeShaderInstance* pComputeShader )
+result VulkanUtils::createComputeShader( VulkanContext& vulkan, ComputeShaderInstance* pShader )
 {
+    SpinLockGuard device_lock( *vulkan.pSpinlock );
+    SpinLockGuard shader_lock( pShader->spinlock );
+
     // Create per-class resources: program binary, descriptorSetlayout, pipelineLayout, and pipeline once per class.
-    if ( pComputeShader->program->shaderModule == nullptr ) {
-        createComputeShaderProgram( vulkan, pComputeShader->program );
-        createDescriptorSetLayout( vulkan, pComputeShader );
-        createComputePipeline( vulkan, pComputeShader->program );
+    if ( pShader->pProgram->shaderModule == nullptr ) {
+        _createComputeShaderProgram( vulkan, pShader->pProgram );
+        _createDescriptorSetLayout( vulkan, pShader );
+        _createComputePipeline( vulkan, pShader );
     }
 
     // Crate per-instance resources
-    createShaderBuffers( vulkan, pComputeShader );
-    recordCommandBuffer( vulkan, pComputeShader );
-    createFence( vulkan, pComputeShader );
-
-    return R_OK;
-}
-
-
-
-result VulkanUtils::createComputeShaderProgram( VulkanContext& vulkan, ComputeShaderProgram* pProgram )
-{
-    uint32_t  shaderLength = 0;
-    uint32_t* shaderBinary = nullptr;
-
-    shaderBinary = _loadShader( pProgram->shaderPath, &shaderLength );
-
-    VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
-    shaderModuleCreateInfo.sType                    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    shaderModuleCreateInfo.pCode                    = shaderBinary;
-    shaderModuleCreateInfo.codeSize                 = shaderLength;
-    CHECK_VK( vkCreateShaderModule( vulkan.device, &shaderModuleCreateInfo, nullptr, &( pProgram->shaderModule ) ) );
-    delete[] shaderBinary;
-
-    return R_OK;
-}
-
-
-result VulkanUtils::createDescriptorSetLayout( VulkanContext& vulkan, ComputeShaderInstance* pComputeShader )
-{
-    VkDescriptorSetLayoutBinding* bindings = new VkDescriptorSetLayoutBinding[ pComputeShader->numBuffers ];
-
-    for ( unsigned i = 0; i < pComputeShader->numBuffers; i++ ) {
-        ShaderBufferInfo&             buf    = pComputeShader->pBuffers[ i ];
-        VkDescriptorSetLayoutBinding& layout = bindings[ i ];
-
-        switch ( buf.type ) {
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_UNIFORM:
-                layout.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                break;
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_STORAGE:
-                layout.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                break;
-            default:
-                assert( 0 );
-        }
-
-        layout.binding         = buf.binding;
-        layout.descriptorCount = 1;
-        layout.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-    }
-
-    VkDescriptorSetLayoutCreateInfo createInfo = {};
-    createInfo.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    createInfo.bindingCount                    = pComputeShader->numBuffers;
-    createInfo.pBindings                       = bindings;
-
-    CHECK_VK( vkCreateDescriptorSetLayout( vulkan.device, &createInfo, nullptr, &pComputeShader->program->descriptorSetLayout ) );
-
-    delete[] bindings;
-
-    return R_OK;
-}
-
-
-result VulkanUtils::createComputePipeline( VulkanContext& vulkan, ComputeShaderProgram* pProgram )
-{
-    // Prevent race condition where ComputeJobs spawn on multiple threads, but only the first one
-    // is constructing the shader
-    while ( !pProgram->shaderModule ) {
-    }
-
-    VkPipelineShaderStageCreateInfo shaderStageCreateInfo = {};
-    shaderStageCreateInfo.sType                           = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shaderStageCreateInfo.stage                           = VK_SHADER_STAGE_COMPUTE_BIT;
-    shaderStageCreateInfo.module                          = pProgram->shaderModule;
-    shaderStageCreateInfo.pName                           = "main";
-
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
-    pipelineLayoutCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutCreateInfo.setLayoutCount             = 1;
-    pipelineLayoutCreateInfo.pSetLayouts                = &(pProgram->descriptorSetLayout);
-    CHECK_VK( vkCreatePipelineLayout( vulkan.device, &pipelineLayoutCreateInfo, nullptr, &(pProgram->pipelineLayout) ) );
-
-    VkComputePipelineCreateInfo pipelineCreateInfo = {};
-    pipelineCreateInfo.sType                       = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineCreateInfo.stage                       = shaderStageCreateInfo;
-    pipelineCreateInfo.layout                      = pProgram->pipelineLayout;
-
-    CHECK_VK( vkCreateComputePipelines( vulkan.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &(pProgram->pipeline) ) );
-
-    printf( "VulkanUtils::createComputePipeline: [%s]\n", pProgram->shaderPath );
-
-    return R_OK;
-}
-
-
-result VulkanUtils::createShaderBuffers( VulkanContext& vulkan, ComputeShaderInstance* pComputeShader )
-{
-    createBuffers( vulkan, pComputeShader->pBuffers, pComputeShader->numBuffers );
-    createDescriptorSet( vulkan, pComputeShader );
-
-    return R_OK;
-}
-
-
-result VulkanUtils::createBuffers( VulkanContext& vulkan, ShaderBufferInfo* pBuffers, uint32_t count )
-{
-    for ( unsigned i = 0; i < count; i++ ) {
-        ShaderBufferInfo& buf = pBuffers[ i ];
-
-        VkBufferUsageFlags    usage      = 0;
-        VkMemoryPropertyFlags properties = 0;
-
-        switch ( buf.type ) {
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_UNIFORM:
-                usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-                break;
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_STORAGE:
-                usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-                break;
-            default:
-                assert( 0 );
-        }
-
-        switch ( buf.visibility ) {
-            case ShaderBufferVisibility::BUFFER_SHARED:
-                properties |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-                break;
-            case ShaderBufferVisibility::BUFFER_DEVICE:
-                properties |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-                break;
-            default:
-                assert( 0 );
-        }
-
-        createBuffer( vulkan, buf.size, buf.pBuffer, buf.pBufferMemory, usage, properties );
-    }
+    _createShaderBuffers( vulkan, pShader );
+    _recordCommandBuffer( vulkan, pShader );
+    _createFence( vulkan, pShader );
 
     return R_OK;
 }
@@ -172,120 +52,32 @@ result VulkanUtils::createBuffers( VulkanContext& vulkan, ShaderBufferInfo* pBuf
 
 result VulkanUtils::createBuffer( VulkanContext& vulkan, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties )
 {
-    VkBufferCreateInfo bufferCreateInfo = {};
-    bufferCreateInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferCreateInfo.size               = bufferSize;
-    bufferCreateInfo.usage              = usage;
-    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
-
-    CHECK_VK( vkCreateBuffer( vulkan.device, &bufferCreateInfo, nullptr, pBuffer ) );
-
-    VkMemoryRequirements memoryRequirements = {};
-    vkGetBufferMemoryRequirements( vulkan.device, *pBuffer, &memoryRequirements );
-
-    VkMemoryAllocateInfo allocateInfo = {};
-    allocateInfo.sType                = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocateInfo.allocationSize       = memoryRequirements.size;
-    allocateInfo.memoryTypeIndex      = _findMemoryType( vulkan.physicalDevice, memoryRequirements.memoryTypeBits, properties );
-
-    CHECK_VK( vkAllocateMemory( vulkan.device, &allocateInfo, nullptr, pBufferMemory ) );
-    CHECK_VK( vkBindBufferMemory( vulkan.device, *pBuffer, *pBufferMemory, 0 ) );
-
-    //printf( "ComputeJob[%d:%d]: allocated %zd bytes of buffer usage 0x%x props 0x%x\n", hCompute, handle, bufferSize, usage, properties );
-
-    return R_OK;
-}
-
-
-result VulkanUtils::createDescriptorSet( VulkanContext& vulkan, ComputeShaderInstance* pShader )
-{
-    // Bind shader descriptors to buffers
-    // TODO: check if descriptorPool has been exhausted
-
-    ComputeShaderProgram& program = *( pShader->program );
-
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool              = vulkan.descriptorPool;
-    allocInfo.descriptorSetCount          = 1;
-    allocInfo.pSetLayouts                 = &program.descriptorSetLayout;
-
-    CHECK_VK( vkAllocateDescriptorSets( vulkan.device, &allocInfo, &pShader->descriptorSet ) );
-    //printf( "MandelbrotComputeJob[%d:%d]: created %d descriptor sets\n", hCompute, handle, allocInfo.descriptorSetCount );
-
-    if ( pShader->descriptorSet == 0 ) {
-        printf( "ERROR: VulkanUtils::createDescriptorSet(): failed to alloc descriptors (pool exhausted?): %s\n", program.shaderPath );
+    if ( bufferSize == 0 )
         return R_FAIL;
-    }
 
-    for ( unsigned i = 0; i < pShader->numBuffers; i++ ) {
-        ShaderBufferInfo& buf = pShader->pBuffers[ i ];
+    SpinLockGuard device_lock( *vulkan.pSpinlock );
 
-        VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer                 = *buf.pBuffer;
-        bufferInfo.offset                 = 0;
-        bufferInfo.range                  = buf.size;
-
-        VkWriteDescriptorSet writeSet = {};
-        writeSet.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeSet.dstSet               = pShader->descriptorSet;
-        writeSet.dstBinding           = i;
-        writeSet.descriptorCount      = 1;
-        writeSet.pBufferInfo          = &bufferInfo;
-
-        switch ( buf.type ) {
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_UNIFORM:
-                writeSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                break;
-            case ShaderBufferType::BUFFER_COMPUTE_SHADER_STORAGE:
-                writeSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                break;
-            default:
-                assert( 0 );
-        }
-
-        vkUpdateDescriptorSets( vulkan.device, 1, &writeSet, 0, nullptr );
-    }
-
-    //printf( "VulkanUtils::createDescriptorSet(): bound %d descriptors\n", pShader->numBuffers );
-
-    return R_OK;
+    return _createBuffer( vulkan, bufferSize, pBuffer, pBufferMemory, usage, properties );
 }
 
 
 result VulkanUtils::recordCommandBuffer( VulkanContext& vulkan, ComputeShaderInstance* pShader )
 {
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType                       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool                 = vulkan.commandPool;
-    allocInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount          = 1;
-    CHECK_VK( vkAllocateCommandBuffers( vulkan.device, &allocInfo, &( pShader->commandBuffer ) ) );
+    // BUG: simultaneous access to vulkan.commandPool from multi threads is not allowed
+    // TODO: commandPool should be created and bound per-thread
+    SpinLockGuard device_lock( *vulkan.pSpinlock );
+    SpinLockGuard shader_lock( pShader->spinlock );
 
-    VkCommandBufferBeginInfo beginInfo = {};
-    beginInfo.sType                    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags                    = 0;
-    CHECK_VK( vkBeginCommandBuffer( pShader->commandBuffer, &beginInfo ) );
-
-    vkCmdBindPipeline( pShader->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pShader->program->pipeline );
-    vkCmdBindDescriptorSets( pShader->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pShader->program->pipelineLayout, 0, 1, &( pShader->descriptorSet ), 0, nullptr );
-    vkCmdDispatch( pShader->commandBuffer, pShader->program->workgroupWidth, pShader->program->workgroupHeight, pShader->program->workgroupDepth );
-    CHECK_VK( vkEndCommandBuffer( pShader->commandBuffer ) );
-
-    //printf( "ComputeJob[%d:%d]: recorded command buffer, workgroup[%d x %d x %d]\n", hCompute, handle, workgroupWidth, workgroupHeight, workgroupDepth );
-
-    return R_OK;
+    return _recordCommandBuffer( vulkan, pShader );
 }
 
 
 result VulkanUtils::createFence( VulkanContext& vulkan, ComputeShaderInstance* pShader )
 {
-    VkFenceCreateInfo fenceCreateInfo = {};
-    fenceCreateInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceCreateInfo.flags             = 0;
-    CHECK_VK( vkCreateFence( vulkan.device, &fenceCreateInfo, nullptr, &pShader->fence ) );
+    SpinLockGuard device_lock( *vulkan.pSpinlock );
+    SpinLockGuard shader_lock( pShader->spinlock );
 
-    return R_OK;
+    return _createFence( vulkan, pShader );
 }
 
 
@@ -335,9 +127,292 @@ static uint32_t* _loadShader( const std::string& shaderPath, uint32_t* pShaderLe
         *pShaderLength = (uint32_t)padded;
     }
 
-    printf( "ComputeJob: loaded %zd bytes of shader (padded to %zd)\n", filesize, padded );
+    printf( "VulkanUtils: loaded %zd bytes of shader\n", filesize );
 
     return buffer;
+}
+
+
+result _createBuffer( VulkanContext& vulkan, size_t bufferSize, VkBuffer* pBuffer, VkDeviceMemory* pBufferMemory, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties )
+{
+    if ( bufferSize == 0 )
+        return R_FAIL;
+
+    VkBufferCreateInfo bufferCreateInfo = {};
+    bufferCreateInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferCreateInfo.size               = bufferSize;
+    bufferCreateInfo.usage              = usage;
+    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+
+    CHECK_VK( vkCreateBuffer( vulkan.device, &bufferCreateInfo, nullptr, pBuffer ) );
+
+    VkMemoryRequirements memoryRequirements = {};
+    vkGetBufferMemoryRequirements( vulkan.device, *pBuffer, &memoryRequirements );
+
+    VkMemoryAllocateInfo allocateInfo = {};
+    allocateInfo.sType                = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocateInfo.allocationSize       = memoryRequirements.size;
+    allocateInfo.memoryTypeIndex      = _findMemoryType( vulkan.physicalDevice, memoryRequirements.memoryTypeBits, properties );
+
+    CHECK_VK( vkAllocateMemory( vulkan.device, &allocateInfo, nullptr, pBufferMemory ) );
+    CHECK_VK( vkBindBufferMemory( vulkan.device, *pBuffer, *pBufferMemory, 0 ) );
+
+    //printf( "VulkanUtils::createBuffer(): allocated %zd bytes of buffer usage 0x%x props 0x%x\n", bufferSize, usage, properties );
+
+    return R_OK;
+}
+
+
+result _createComputeShaderProgram( VulkanContext& vulkan, VulkanUtils::ComputeShaderProgram* pProgram )
+{
+    uint32_t  shaderLength = 0;
+    uint32_t* shaderBinary = nullptr;
+
+    shaderBinary = _loadShader( pProgram->shaderPath, &shaderLength );
+
+    VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
+    shaderModuleCreateInfo.sType                    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderModuleCreateInfo.pCode                    = shaderBinary;
+    shaderModuleCreateInfo.codeSize                 = shaderLength;
+    CHECK_VK( vkCreateShaderModule( vulkan.device, &shaderModuleCreateInfo, nullptr, &( pProgram->shaderModule ) ) );
+    delete[] shaderBinary;
+
+    return R_OK;
+}
+
+
+result _createDescriptorSetLayout( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    VkDescriptorSetLayoutBinding* bindings = new VkDescriptorSetLayoutBinding[ pShader->numBuffers ];
+
+    for ( unsigned i = 0; i < pShader->numBuffers; i++ ) {
+        VkDescriptorSetLayoutBinding& layout = bindings[ i ];
+        ComputeBufferVulkan*          buf    = dynamic_cast<ComputeBufferVulkan*>( pShader->ppBuffers[ i ] );
+
+        switch ( buf->type ) {
+            case ComputeBufferType::COMPUTE_BUFFER_UNIFORM:
+                layout.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                break;
+            case ComputeBufferType::COMPUTE_BUFFER_STORAGE:
+                layout.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                break;
+            default:
+                assert( 0 );
+        }
+
+        layout.binding         = buf->binding;
+        layout.descriptorCount = 1;
+        layout.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    VkDescriptorSetLayoutCreateInfo createInfo = {};
+    createInfo.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    createInfo.bindingCount                    = pShader->numBuffers;
+    createInfo.pBindings                       = bindings;
+
+    CHECK_VK( vkCreateDescriptorSetLayout( vulkan.device, &createInfo, nullptr, &pShader->pProgram->descriptorSetLayout ) );
+
+    delete[] bindings;
+
+    return R_OK;
+}
+
+
+result _createComputePipeline( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    VulkanUtils::ComputeShaderProgram* pProgram = pShader->pProgram;
+
+    // Prevent race condition where ComputeJobs spawn on multiple threads, but only the first one
+    // is constructing the shader
+    while ( !pProgram->shaderModule ) {
+    }
+
+    VkPipelineShaderStageCreateInfo shaderStageCreateInfo = {};
+    shaderStageCreateInfo.sType                           = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageCreateInfo.stage                           = VK_SHADER_STAGE_COMPUTE_BIT;
+    shaderStageCreateInfo.module                          = pProgram->shaderModule;
+    shaderStageCreateInfo.pName                           = "main";
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+    pipelineLayoutCreateInfo.sType                      = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutCreateInfo.setLayoutCount             = 1;
+    pipelineLayoutCreateInfo.pSetLayouts                = &( pProgram->descriptorSetLayout );
+    CHECK_VK( vkCreatePipelineLayout( vulkan.device, &pipelineLayoutCreateInfo, nullptr, &( pProgram->pipelineLayout ) ) );
+
+    VkComputePipelineCreateInfo pipelineCreateInfo = {};
+    pipelineCreateInfo.sType                       = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineCreateInfo.stage                       = shaderStageCreateInfo;
+    pipelineCreateInfo.layout                      = pProgram->pipelineLayout;
+
+    CHECK_VK( vkCreateComputePipelines( vulkan.device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &( pProgram->pipeline ) ) );
+
+    printf( "VulkanUtils::createComputePipeline: [%s]\n", pProgram->shaderPath );
+
+    return R_OK;
+}
+
+
+result _createShaderBuffers( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pComputeShader )
+{
+    _createBuffers( vulkan, pComputeShader->ppBuffers, pComputeShader->numBuffers );
+    _createDescriptorSet( vulkan, pComputeShader );
+    _bindBuffers( vulkan, pComputeShader->ppBuffers, pComputeShader->numBuffers, pComputeShader );
+
+    return R_OK;
+}
+
+
+result _createBuffers( VulkanContext& vulkan, IComputeBuffer** ppBuffers, uint32_t count )
+{
+    for ( unsigned i = 0; i < count; i++ ) {
+        ComputeBufferVulkan* buf = dynamic_cast<ComputeBufferVulkan*>( ppBuffers[ i ] );
+
+        // Don't recreate a buffer that was already allocated and bound
+        if ( buf->vkBuffer != VK_NULL_HANDLE )
+            continue;
+
+        VkBufferUsageFlags    usage      = 0;
+        VkMemoryPropertyFlags properties = 0;
+
+        switch ( buf->type ) {
+            case ComputeBufferType::COMPUTE_BUFFER_UNIFORM:
+                usage |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+                break;
+            case ComputeBufferType::COMPUTE_BUFFER_STORAGE:
+                usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+                break;
+            default:
+                assert( 0 );
+        }
+
+        switch ( buf->visibility ) {
+            case ComputeBufferVisibility::COMPUTE_BUFFER_SHARED:
+                properties |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+                break;
+            case ComputeBufferVisibility::COMPUTE_BUFFER_DEVICE:
+                properties |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                break;
+            default:
+                assert( 0 );
+        }
+
+        _createBuffer( vulkan, buf->size(), &buf->vkBuffer, &buf->vkBufferMemory, usage, properties );
+    }
+
+    return R_OK;
+}
+
+
+result _createDescriptorSet( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    // Bind shader descriptors to buffers
+    // TODO: check if descriptorPool has been exhausted
+
+    VulkanUtils::ComputeShaderProgram& program = *( pShader->pProgram );
+
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType                       = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool              = vulkan.descriptorPool;
+    allocInfo.descriptorSetCount          = 1;
+    allocInfo.pSetLayouts                 = &program.descriptorSetLayout;
+
+    CHECK_VK( vkAllocateDescriptorSets( vulkan.device, &allocInfo, &pShader->descriptorSet ) );
+
+    if ( pShader->descriptorSet == 0 ) {
+        printf( "ERROR: VulkanUtils::createDescriptorSet(): failed to alloc descriptors (pool exhausted?): %s\n", program.shaderPath );
+        return R_FAIL;
+    }
+
+    for ( unsigned i = 0; i < pShader->numBuffers; i++ ) {
+        ComputeBufferVulkan* buf = dynamic_cast<ComputeBufferVulkan*>( pShader->ppBuffers[ i ] );
+
+        VkDescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer                 = buf->vkBuffer;
+        bufferInfo.offset                 = 0;
+        bufferInfo.range                  = buf->size();
+
+        VkWriteDescriptorSet writeSet = {};
+        writeSet.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeSet.dstSet               = pShader->descriptorSet;
+        writeSet.dstBinding           = i;
+        writeSet.descriptorCount      = 1;
+        writeSet.pBufferInfo          = &bufferInfo;
+
+        switch ( buf->type ) {
+            case ComputeBufferType::COMPUTE_BUFFER_UNIFORM:
+                writeSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                break;
+            case ComputeBufferType::COMPUTE_BUFFER_STORAGE:
+                writeSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                break;
+            default:
+                assert( 0 );
+        }
+
+        vkUpdateDescriptorSets( vulkan.device, 1, &writeSet, 0, nullptr );
+    }
+
+    //printf( "VulkanUtils::createDescriptorSet(): bound %d descriptors to set 0x%llx\n", pShader->numBuffers, (uint64_t)pShader->descriptorSet );
+
+    return R_OK;
+}
+
+
+result _bindBuffers( VulkanContext& vulkan, IComputeBuffer** ppBuffers, uint32_t count, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    bool result = true;
+    for ( unsigned i = 0; i < count; i++ ) {
+        ComputeBufferVulkan* buf = dynamic_cast<ComputeBufferVulkan*>( ppBuffers[ i ] );
+        result &= buf->bind( pShader );
+    }
+
+    //printf( "VulkanUtils::bindBuffers(): %d buffers to descriptorSet %s:%lld\n", count, pShader->program->shaderPath, (uint64_t)pShader->descriptorSet );
+
+    return result ? R_OK : R_FAIL;
+}
+
+
+result _recordCommandBuffer( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    VulkanUtils::ComputeShaderProgram* pProgram = pShader->pProgram;
+
+    if ( pShader->commandBuffer != VK_NULL_HANDLE ) {
+        CHECK_VK( vkResetCommandBuffer( pShader->commandBuffer, 0 ) );
+        vkFreeCommandBuffers( vulkan.device, vulkan.commandPool, 1, &pShader->commandBuffer );
+        pShader->commandBuffer = VK_NULL_HANDLE;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType                       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool                 = vulkan.commandPool;
+    allocInfo.level                       = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount          = 1;
+    CHECK_VK( vkAllocateCommandBuffers( vulkan.device, &allocInfo, &( pShader->commandBuffer ) ) );
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType                    = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags                    = 0;
+    CHECK_VK( vkBeginCommandBuffer( pShader->commandBuffer, &beginInfo ) );
+
+    vkCmdBindPipeline( pShader->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pProgram->pipeline );
+    vkCmdBindDescriptorSets( pShader->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pProgram->pipelineLayout, 0, 1, &( pShader->descriptorSet ), 0, nullptr );
+    vkCmdDispatch( pShader->commandBuffer, pProgram->workgroupWidth, pProgram->workgroupHeight, pProgram->workgroupDepth );
+    CHECK_VK( vkEndCommandBuffer( pShader->commandBuffer ) );
+
+    //printf( "VulkanUtils::recordCommandBuffer():  0x%llx [%s]\n", (uint64_t)pShader->commandBuffer, pShader->program->shaderPath );
+
+    return R_OK;
+}
+
+
+result _createFence( VulkanContext& vulkan, VulkanUtils::ComputeShaderInstance* pShader )
+{
+    VkFenceCreateInfo fenceCreateInfo = {};
+    fenceCreateInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceCreateInfo.flags             = 0;
+    CHECK_VK( vkCreateFence( vulkan.device, &fenceCreateInfo, nullptr, &pShader->fence ) );
+
+    return R_OK;
 }
 
 

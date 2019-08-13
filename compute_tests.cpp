@@ -1,5 +1,5 @@
 #include "compute.h"
-#include "compute_job.h"
+#include "example_compute_job.h"
 #include "mandelbrot_compute_job.h"
 #include "utils.h"
 
@@ -16,10 +16,10 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     compute_t instances[ 2 ] = {};
     uint32_t  timeoutMS      = -1;
 
-    rval = computeInit( enableValidation );
-    ASSERT( rval == R_OK );
+    //rval = computeInit( enableValidation );
+    //ASSERT( rval == R_OK );
 
-    if ( preferredDevice > ARRAY_SIZE( instances ) - 1 )
+    if ( preferredDevice == -1 || preferredDevice > ARRAY_SIZE( instances ) - 1 )
         preferredDevice = 0;
     printf( "Using compute instance %d\n", preferredDevice );
     compute_t hCompute = computeAcquire( preferredDevice );
@@ -29,16 +29,17 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     // Create and submit vanilla compute jobs
     //
     uint32_t maxJobs = 200;
-    std::vector<std::unique_ptr<ComputeJob>> jobs;
+    std::vector<std::unique_ptr<ExampleComputeJob>> jobs;
     jobs.resize( maxJobs );
     for ( unsigned i = 0; i < maxJobs; i++ ) {
-        jobs[ i ] = ComputeJob::create( hCompute );
+        uint32_t inputWidth = 0;
+        uint32_t inputHeight = 0;
+        uint32_t outputWidth = 1000;
+        uint32_t outputHeight = 1000;
+        jobs[ i ] = ExampleComputeJob::create( hCompute, inputWidth, inputHeight, outputWidth, outputHeight );
     }
 
     for ( uint32_t i = 0; i < maxJobs; i++ ) {
-        jobs[ i ]->outputWidth           = 1000;
-        jobs[ i ]->outputHeight          = 1000;
-
         //printf( "job[%d]: %d %d\n", i, jobs[ i ]->enableGammaCorrection, jobs[ i ]->maxIterations );
 
         jobs[ i ]->handle = computeSubmitJob( *jobs[ i ], hCompute );
@@ -64,7 +65,9 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
     std::vector<std::unique_ptr<MandelbrotComputeJob>> mandelbrotJobs;
     mandelbrotJobs.resize( maxJobs );
     for ( unsigned i = 0; i < maxJobs; i++ ) {
-        mandelbrotJobs[ i ] = MandelbrotComputeJob::create( hCompute );
+        uint32_t outputWidth = 1000;
+        uint32_t outputHeight = 1000;
+        mandelbrotJobs[ i ] = MandelbrotComputeJob::create( hCompute, outputWidth, outputHeight );
     }
     // Try to saturate the GPU
     uint32_t maxIterations = 30;
@@ -74,8 +77,6 @@ void testCompute( uint32_t preferredDevice, bool enableValidation )
         for ( uint32_t i = 0; i < maxJobs; i++ ) {
             mandelbrotJobs[ i ]->enableGammaCorrection = i % 2;
             mandelbrotJobs[ i ]->maxIterations         = uint32_t( random() * 512 );
-            mandelbrotJobs[ i ]->outputWidth           = 1000;
-            mandelbrotJobs[ i ]->outputHeight          = 1000;
 
             //printf( "job[%d]: %d %d\n", i, jobs[ i ]->enableGammaCorrection, jobs[ i ]->maxIterations );
 

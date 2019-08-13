@@ -47,7 +47,7 @@ typedef struct _RenderThreadContext {
 static bool _renderJobISPC( void* context, uint32_t tid );
 
 
-int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, bool recursive )
+int renderSceneISPC( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug )
 {
     PerfTimer t;
 

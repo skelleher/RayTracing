@@ -1,6 +1,6 @@
 #include "compute.h"
 
-#include "compute_job.h"
+#include "compute_job_vulkan.h"
 #include "event_object.h"
 #include "object_queue.h"
 #include "perf_timer.h"
@@ -58,8 +58,9 @@ struct ComputeInstance {
     }
 };
 
-static std::mutex      s_compute_instances_mutex;
-static ComputeInstance s_compute_instances[ MAX_COMPUTE_INSTANCES ];
+static std::atomic<bool> s_initialized = false;
+static std::mutex        s_compute_instances_mutex;
+static ComputeInstance   s_compute_instances[ MAX_COMPUTE_INSTANCES ];
 
 static bool     _valid( compute_t pool );
 static bool     _findPhysicalDevice( ComputeInstance& cp, unsigned device );
@@ -81,6 +82,9 @@ static void     _computeJobMarkFinished( IComputeJob* job );
 
 result computeInit( bool enableValidation )
 {
+    if ( s_initialized )
+        return R_OK;
+
     compute_t handle       = INVALID_COMPUTE_INSTANCE;
     unsigned  numInstances = 0;
 
@@ -108,6 +112,8 @@ result computeInit( bool enableValidation )
     if ( !numInstances )
         printf( "ERROR: computeCreate(): found no Vulkan device\n" );
 
+    s_initialized = numInstances > 0;
+
     return numInstances > 0 ? R_OK : R_FAIL;
 }
 
@@ -120,7 +126,7 @@ compute_t computeAcquire( uint32_t device )
     }
 
     ComputeInstance& cp = s_compute_instances[ device ];
-    SpinLockGuard compute_lock( cp.spinLock );
+    SpinLockGuard    compute_lock( cp.spinLock );
     cp.refCount++;
 
     return cp.handle;
@@ -148,7 +154,7 @@ result computeRelease( compute_t handle )
 uint32_t computeGetMaxJobs( compute_t handle )
 {
     if ( !_valid( handle ) )
-        return R_FAIL;
+        return 0;
 
     ComputeInstance& cp = s_compute_instances[ handle ];
     SpinLockGuard    compute_lock( cp.spinLock );
@@ -157,44 +163,57 @@ uint32_t computeGetMaxJobs( compute_t handle )
 }
 
 
-compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
+bool computeBindJob( IComputeJob& job, compute_t handle )
 {
     if ( !_valid( handle ) )
-        return R_FAIL;
+        return false;
 
     ComputeInstance& cp = s_compute_instances[ handle ];
-    SpinLockGuard    compute_lock( cp.spinLock );
+    SpinLockGuard    job_lock( job.spinLock );
 
-    IComputeJob*  _job = dynamic_cast<IComputeJob*>( &job );
-    SpinLockGuard job_lock( _job->spinLock );
-
-    if ( _job->hCompute != cp.handle ) {
-        printf( "ERROR: Compute[%d] submitJob: job %d was not created on this device\n", cp.handle, _job->handle );
-        return INVALID_COMPUTE_JOB;
-    }
-
-    // Bind the job to this device
     IComputeJobVulkan* _vkJob     = dynamic_cast<IComputeJobVulkan*>( &job );
+    _vkJob->vulkan.pSpinlock      = &cp.spinLock;
     _vkJob->vulkan.device         = cp.device;
     _vkJob->vulkan.physicalDevice = cp.physicalDevice;
     _vkJob->vulkan.descriptorPool = cp.descriptorPool;
     _vkJob->vulkan.commandPool    = cp.commandPool;
     _vkJob->vulkan.queue          = cp.queue;
-    _job->init();
-    assert( _job->handle != INVALID_COMPUTE_JOB );
 
-    // Remove job from the finished list (it is normal to allocate a job once and re-submit it frequently)
-    cp.finishedJobs.erase( _job->handle );
-    cp.activeJobs[ _job->handle ] = _job;
-    cp.activeJobEvents[ _job->handle ].reset();
+    job.init();
 
-    _job->cpuThreadHandle = threadPoolSubmitJob( Function( _executeComputeJob, _job ) );
-    if ( _job->cpuThreadHandle == INVALID_JOB ) {
-        printf( "ERROR: Compute[%d]: submitJob failed\n", cp.handle );
-        _job->handle = INVALID_COMPUTE_JOB;
+    return true;
+}
+
+
+compute_job_t computeSubmitJob( IComputeJob& job, compute_t handle )
+{
+    if ( !_valid( handle ) )
+        return R_FAIL;
+
+    assert( job.handle != INVALID_COMPUTE_JOB );
+
+    ComputeInstance& cp = s_compute_instances[ handle ];
+
+    //SpinLockGuard compute_lock( cp.spinLock );
+    SpinLockGuard job_lock( job.spinLock );
+
+    if ( job.hCompute != cp.handle ) {
+        computeBindJob( job, handle );
     }
 
-    return _job->handle;
+    // Remove job from the finished list if present (it is normal to allocate a job once and re-submit it frequently)
+    SpinLockGuard compute_lock( cp.spinLock );
+    cp.finishedJobs.erase( job.handle );
+    cp.activeJobs[ job.handle ] = &job;
+    cp.activeJobEvents[ job.handle ].reset();
+
+    job.cpuThreadHandle = threadPoolSubmitJob( Function( _executeComputeJob, &job ) );
+    if ( job.cpuThreadHandle == INVALID_JOB ) {
+        printf( "ERROR: Compute[%d]: submitJob failed\n", cp.handle );
+        job.handle = INVALID_COMPUTE_JOB;
+    }
+
+    return job.handle;
 }
 
 
@@ -215,17 +234,6 @@ result computeWaitForJob( compute_job_t job, uint32_t timeoutMS, compute_t handl
     cp.spinLock.release();
 
     while ( true ) {
-
-        //cp.spinLock.lock();
-        //if ( cp.finishedJobs.find( job ) != cp.finishedJobs.end() && cp.finishedJobs[ job ]->handle == job ) {
-        //    cp.finishedJobs.erase( job );
-        //    cp.activeJobs.erase( job );
-        //    cp.activeJobEvents.erase( job );
-        //    cp.spinLock.release();
-        //    return R_OK;
-        //}
-        //cp.spinLock.release();
-
         result rval = cp.activeJobEvents[ job ].wait( timeoutMS );
         cp.spinLock.lock();
         cp.activeJobEvents.erase( job );

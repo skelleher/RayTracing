@@ -1,5 +1,6 @@
-#include "mandelbrot_compute_job.h"
+#include "example_compute_job.h"
 
+#include "compute_buffer.h"
 #include "perf_timer.h"
 #include "utils.h"
 #include "vulkan_utils.h"
@@ -22,21 +23,20 @@ namespace pk
 // TODO: ComputeInstance should query the GPU for best workgroupSize and pass it to create()
 static const uint32_t WORK_GROUP_SIZE = 32;
 
-std::atomic<uint32_t> MandelbrotComputeJob::numInstances = 0;
+std::atomic<uint32_t> ExampleComputeJob::numInstances = 0;
 
 // Instances of a compute job share the same shader binary and pipeline.
-VulkanUtils::ComputeShaderProgram MandelbrotComputeJob::shaderProgram = {
-    "shaders\\mandelbrot.spv"
+VulkanUtils::ComputeShaderProgram ExampleComputeJob::shaderProgram = {
+    "shaders\\test_vulkan.spv"
 };
 
-
+// TODO: these never change (for a given pipeline) so could be
+// set at pipeline creation stage via Push Constants instead of passed as uniforms.
 struct UniformBufferObject {
     alignas( 4 ) uint32_t inputWidth;
     alignas( 4 ) uint32_t inputHeight;
     alignas( 4 ) uint32_t outputWidth;
     alignas( 4 ) uint32_t outputHeight;
-    alignas( 4 ) uint32_t maxIterations;
-    alignas( 4 ) bool applyGammaCorrection;
 };
 
 struct Pixel {
@@ -44,34 +44,20 @@ struct Pixel {
 };
 
 // factory method
-std::unique_ptr<MandelbrotComputeJob> MandelbrotComputeJob::create( compute_t hCompute, uint32_t outputWidth, uint32_t outputHeight )
+std::unique_ptr<ExampleComputeJob> ExampleComputeJob::create( compute_t hCompute, uint32_t inputWidth, uint32_t inputHeight, uint32_t outputWidth, uint32_t outputHeight )
 {
-    std::unique_ptr<MandelbrotComputeJob> pJob( new MandelbrotComputeJob( hCompute, outputWidth, outputHeight ) );
-
+    std::unique_ptr<ExampleComputeJob> pJob( new ExampleComputeJob( hCompute, inputWidth, inputHeight, outputWidth, outputHeight ) );
     computeBindJob( *pJob, hCompute );
 
     return pJob;
 }
 
 
-// IMandelbrotComputeJob
-void MandelbrotComputeJob::init()
+// IComputeJob
+void ExampleComputeJob::init()
 {
     if ( initialized )
         return;
-
-    shaderProgram.workgroupSize   = WORK_GROUP_SIZE;
-    shaderProgram.workgroupWidth  = (uint32_t)ceil( outputWidth / (float)shaderProgram.workgroupSize );
-    shaderProgram.workgroupHeight = (uint32_t)ceil( outputHeight / (float)shaderProgram.workgroupSize );
-    shaderProgram.workgroupDepth  = 1;
-
-    //size_t uniformBufferSize = sizeof( UniformBufferObject );
-    //size_t inputBufferSize   = inputWidth * inputHeight * sizeof( float );
-    //size_t outputBufferSize  = outputWidth * outputHeight * 4 * sizeof( float );
-
-    //uniformBuffer.init( vulkan, &shader, 0, uniformBufferSize, COMPUTE_BUFFER_UNIFORM, COMPUTE_BUFFER_SHARED );
-    //inputBuffer.init( vulkan, &shader, 1, inputBufferSize, COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
-    //outputBuffer.init( vulkan, &shader, 2, outputBufferSize, COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
 
     ComputeBufferDims uniformBufferDims = { 1, 1, sizeof( UniformBufferObject ) };
     ComputeBufferDims inputBufferDims   = { inputWidth, inputHeight, sizeof( uint8_t ) };
@@ -85,6 +71,11 @@ void MandelbrotComputeJob::init()
         &uniformBuffer, &inputBuffer, &outputBuffer
     };
 
+    shaderProgram.workgroupSize   = WORK_GROUP_SIZE;
+    shaderProgram.workgroupWidth  = (uint32_t)ceil( outputWidth / (float)shaderProgram.workgroupSize );
+    shaderProgram.workgroupHeight = (uint32_t)ceil( outputHeight / (float)shaderProgram.workgroupSize );
+    shaderProgram.workgroupDepth  = 1;
+
     shader.pProgram   = &shaderProgram;
     shader.ppBuffers  = buffers;
     shader.numBuffers = ARRAY_SIZE( buffers );
@@ -94,9 +85,15 @@ void MandelbrotComputeJob::init()
 }
 
 
-void MandelbrotComputeJob::presubmit()
+void ExampleComputeJob::presubmit()
 {
-    //printf( "MandelbrotComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
+    //printf( "ExampleComputeJob[%d:%d]::presubmit()\n", hCompute, handle );
+
+    // TEST: just to ensure that resize doesn't break anything:
+    uniformBuffer.resize( uniformBuffer.dims );
+    inputBuffer.resize( inputBuffer.dims );
+    outputBuffer.resize( outputBuffer.dims );
+
 
     if ( uniformBuffer.sizeHasChanged || inputBuffer.sizeHasChanged || outputBuffer.sizeHasChanged ) {
         VulkanUtils::recordCommandBuffer( vulkan, &shader );
@@ -109,12 +106,10 @@ void MandelbrotComputeJob::presubmit()
     // NOTE: if these never change you could do this in init()
     // instead of presubmit()
     struct UniformBufferObject ubo;
-    ubo.inputWidth           = inputWidth;
-    ubo.inputHeight          = inputHeight;
-    ubo.outputWidth          = outputWidth;
-    ubo.outputHeight         = outputHeight;
-    ubo.maxIterations        = maxIterations;
-    ubo.applyGammaCorrection = enableGammaCorrection;
+    ubo.inputWidth   = inputWidth;
+    ubo.inputHeight  = inputHeight;
+    ubo.outputWidth  = outputWidth;
+    ubo.outputHeight = outputHeight;
 
     uniformBuffer.map();
     memcpy( uniformBuffer.mapped, &ubo, sizeof( ubo ) );
@@ -128,13 +123,13 @@ void MandelbrotComputeJob::presubmit()
 }
 
 
-void MandelbrotComputeJob::submit()
+void ExampleComputeJob::submit()
 {
     if ( !shader.commandBuffer ) {
         return;
     }
 
-    //printf( "MandelbrotComputeJob[%d:%d]::submit()\n", hCompute, handle );
+    //printf( "ExampleComputeJob[%d:%d]::submit()\n", hCompute, handle );
 
     VkSubmitInfo submitInfo       = {};
     submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -142,34 +137,38 @@ void MandelbrotComputeJob::submit()
     submitInfo.pCommandBuffers    = &shader.commandBuffer;
 
     CHECK_VK( vkResetFences( vulkan.device, 1, &shader.fence ) );
+
+    // TODO: vkQueueSubmit() works better if we pass lots of command buffers, instead
+    // of calling once per command buffer.
+    // Compute should concatenate them and then periodically call submit?
+
     CHECK_VK( vkQueueSubmit( vulkan.queue, 1, &submitInfo, shader.fence ) );
 }
 
 
-void MandelbrotComputeJob::postsubmit( uint32_t timeoutMS )
+void ExampleComputeJob::postsubmit( uint32_t timeoutMS )
 {
-    //printf( "MandelbrotComputeJob[%d:%d]::postsubmit()\n", hCompute, handle );
+    //printf( "ExampleComputeJob[%d:%d]::postsubmit()\n", hCompute, handle );
 
     uint64_t timeoutNS = timeoutMS * 1000000;
     VkResult rval      = vkWaitForFences( vulkan.device, 1, &shader.fence, VK_TRUE, timeoutNS );
 
     if ( rval == VK_TIMEOUT ) {
-        printf( "ERROR: MandelbrotComputeJob[%d:%d]: timeout (%d ms)\n", hCompute, handle, timeoutMS );
+        printf( "ERROR: ExampleComputeJob[%d:%d]: timeout (%d ms)\n", hCompute, handle, timeoutMS );
         return;
     }
 
     if ( rval != VK_SUCCESS ) {
-        printf( "ERROR: MandelbrotComputeJob[%d:%d]: error %d\n", hCompute, handle, rval );
+        printf( "ERROR: ExampleComputeJob[%d:%d]: error %d\n", hCompute, handle, rval );
         return;
     }
 }
 
 
-void MandelbrotComputeJob::save( const std::string outputPath )
+void ExampleComputeJob::save( const std::string outputPath )
 {
     printf( "Saving to %s\n", outputPath.c_str() );
 
-    // Save output of mandelbrot
     outputBuffer.map();
 
     struct Pixel {
@@ -181,7 +180,6 @@ void MandelbrotComputeJob::save( const std::string outputPath )
 
     Pixel* pixels = (Pixel*)outputBuffer.mapped;
 
-    // Save image
     FILE*   file = nullptr;
     errno_t err  = fopen_s( &file, outputPath.c_str(), "w" );
     if ( !file || err != 0 ) {
@@ -214,12 +212,12 @@ void MandelbrotComputeJob::save( const std::string outputPath )
 
 
 //
-// Private Implementation
+// Private implementation
 //
 
-void MandelbrotComputeJob::_destroy()
+void ExampleComputeJob::_destroy()
 {
-    //printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+    //printf( "ExampleComputeJob[%d:%d]::destroy()\n", hCompute, handle );
 
     if ( destroyed )
         return;
@@ -239,7 +237,7 @@ void MandelbrotComputeJob::_destroy()
 
     // Free the static resources shared by all instances
     if ( numInstances == 0 && shaderProgram.pipeline ) {
-        printf( "MandelbrotComputeJob[%d:%d]::destroy()\n", hCompute, handle );
+        printf( "ExampleComputeJob[%d:%d]::destroy()\n", hCompute, handle );
         vkDestroyShaderModule( vulkan.device, shaderProgram.shaderModule, nullptr );
         vkDestroyDescriptorSetLayout( vulkan.device, shaderProgram.descriptorSetLayout, nullptr );
         vkDestroyPipelineLayout( vulkan.device, shaderProgram.pipelineLayout, nullptr );

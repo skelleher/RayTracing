@@ -184,3 +184,182 @@ __host__ __device__ inline vector3 unit_vector( vector3 v )
 {
     return v / v.length();
 }
+
+
+//
+// **************************************************************************
+//
+
+class vector4 {
+
+public:
+    __host__ __device__ vector4() {}
+    __host__ __device__ vector4( float e0, float e1, float e2, float e3 )
+    {
+        x = e0;
+        y = e1;
+        z = e2;
+        w = e3;
+    }
+
+    __host__ __device__ ~vector4() {}
+
+    __host__ __device__ inline float r() const { return x; }
+    __host__ __device__ inline float g() const { return y; }
+    __host__ __device__ inline float b() const { return z; }
+    __host__ __device__ inline float a() const { return w; }
+
+    __host__ __device__ inline const vector4 &operator+() const { return *this; }
+    __host__ __device__ inline vector4 operator-() const { return vector4( -x, -y, -z, -w ); }
+
+    __host__ __device__ inline vector4 &operator+=( const vector4 &v2 );
+    __host__ __device__ inline vector4 &operator-=( const vector4 &v2 );
+    __host__ __device__ inline vector4 &operator*=( const vector4 &v2 );
+    __host__ __device__ inline vector4 &operator/=( const vector4 &v2 );
+    __host__ __device__ inline vector4 &operator*=( const float t );
+    __host__ __device__ inline vector4 &operator/=( const float t );
+
+    __host__ __device__ inline float length() const { return sqrt( x * x + y * y + z * z + w * w ); }
+    __host__ __device__ inline float squared_length() const { return x * x + y * y + z * z + w * w; }
+
+    __host__ __device__ inline vector4 normalized() const
+    {
+        vector4 v = *this;
+        v.normalize();
+
+        return v;
+    }
+
+    __host__ __device__ inline void normalize()
+    {
+        float length = (float)sqrt( x * x + y * y + z * z + w * w);
+        x /= length;
+        y /= length;
+        z /= length;
+        w /= length;
+    }
+
+    __host__ __device__ inline float dot( const vector4& v ) const
+    {
+        return (x * v.x) + (y * v.y) + (z * v.z) + (w * v.w);
+    }
+
+    float x;
+    float y;
+    float z;
+    float w;
+};
+
+
+inline std::istream &operator>>( std::istream &is, vector4 &t )
+{
+    is >> t.x >> t.y >> t.z >> t.w;
+    return is;
+}
+
+inline std::ostream &operator<<( std::ostream &os, const vector4 &t )
+{
+    os << t.x << " " << t.y << " " << t.z << " " << t.w;
+    return os;
+}
+
+__host__ __device__ inline vector4 operator+( const vector4 &v1, const vector4 &v2 )
+{
+    return vector4( v1.x + v2.x, v1.y + v2.y, v1.z + v2.z, v1.w + v2.w );
+}
+
+__host__ __device__ inline vector4 operator-( const vector4 &v1, const vector4 &v2 )
+{
+    return vector4( v1.x - v2.x, v1.y - v2.y, v1.z - v2.z, v1.w - v2.w );
+}
+
+__host__ __device__ inline vector4 operator*( const vector4 &v1, const vector4 &v2 )
+{
+    return vector4( v1.x * v2.x, v1.y * v2.y, v1.z * v2.z, v1.w * v2.w );
+}
+
+__host__ __device__ inline vector4 operator/( const vector4 &v1, const vector4 &v2 )
+{
+    return vector4( v1.x / v2.x, v1.y / v2.y, v1.z / v2.z, v1.w / v2.w );
+}
+
+__host__ __device__ inline vector4 operator*( float t, const vector4 &v )
+{
+    return vector4( t * v.x, t * v.y, t * v.z, t * v.w );
+}
+
+__host__ __device__ inline vector4 operator/( vector4 v, float t )
+{
+    return vector4( v.x / t, v.y / t, v.z / t, v.w / t );
+}
+
+__host__ __device__ inline vector4 operator*( const vector4 &v, float t )
+{
+    return vector4( t * v.x, t * v.y, t * v.z, t * v.w );
+}
+
+__host__ __device__ inline float dot( const vector4 &v1, const vector4 &v2 )
+{
+    return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z + v1.w * v2.w;
+}
+
+__host__ __device__ inline vector4 &vector4::operator+=( const vector4 &v )
+{
+    x += v.x;
+    y += v.y;
+    z += v.z;
+    w += v.w;
+    return *this;
+}
+
+__host__ __device__ inline vector4 &vector4::operator*=( const vector4 &v )
+{
+    x *= v.x;
+    y *= v.y;
+    z *= v.z;
+    w *= v.w;
+    return *this;
+}
+
+__host__ __device__ inline vector4 &vector4::operator/=( const vector4 &v )
+{
+    x /= v.x;
+    y /= v.y;
+    z /= v.z;
+    w /= v.w;
+    return *this;
+}
+
+__host__ __device__ inline vector4 &vector4::operator-=( const vector4 &v )
+{
+    x -= v.x;
+    y -= v.y;
+    z -= v.z;
+    w -= v.w;
+    return *this;
+}
+
+__host__ __device__ inline vector4 &vector4::operator*=( const float t )
+{
+    x *= t;
+    y *= t;
+    z *= t;
+    w *= t;
+    return *this;
+}
+
+__host__ __device__ inline vector4 &vector4::operator/=( const float t )
+{
+    float k = 1.0f / t;
+
+    x *= k;
+    y *= k;
+    z *= k;
+    w *= k;
+    return *this;
+}
+
+__host__ __device__ inline vector4 unit_vector( vector4 v )
+{
+    return v / v.length();
+}

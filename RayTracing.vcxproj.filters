@@ -42,9 +42,6 @@
     <ClInclude Include="compute.h">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
-    <ClInclude Include="compute_job.h">
-      <Filter>Source Files\ComputeJobs</Filter>
-    </ClInclude>
     <ClInclude Include="mandelbrot_compute_job.h">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
@@ -99,13 +96,28 @@
     <ClInclude Include="vulkan_utils.h">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
+    <ClInclude Include="raytracer_compute.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="example_compute_job.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="compute_buffer.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="compute_job_vulkan.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="compute_buffer_vulkan.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders\raytracer_glsl.h">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RayTracing.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="compute_job.cpp">
-      <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
     <ClCompile Include="compute_tests.cpp">
       <Filter>Source Files\ComputeJobs</Filter>
@@ -149,6 +161,15 @@
     <ClCompile Include="vulkan_utils.cpp">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
+    <ClCompile Include="raytracer_compute.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClCompile>
+    <ClCompile Include="example_compute_job.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClCompile>
+    <ClCompile Include="compute_buffer_vulkan.cpp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="test.cu">
@@ -174,9 +195,12 @@
     <CustomBuild Include="shaders\test_vulkan.comp">
       <Filter>Source Files\ComputeJobs</Filter>
     </CustomBuild>
+    <CustomBuild Include="shaders\mandelbrot.comp">
+      <Filter>Source Files\ComputeJobs</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\mandelbrot.comp">
+    <None Include="shaders\raytracer.comp">
       <Filter>Source Files\ComputeJobs</Filter>
     </None>
   </ItemGroup>

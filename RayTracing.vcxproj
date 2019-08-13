@@ -76,7 +76,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(VULKAN_SDK)\include;</IncludePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(VULKAN_SDK)\include;$(SolutionDir)shaders</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;$(VULKAN_SDK)\lib;</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -84,7 +84,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(VULKAN_SDK)\include;</IncludePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(VULKAN_SDK)\include;$(SolutionDir)shaders</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);$(NETFXKitsDir)Lib\um\x64;$(VULKAN_SDK)\lib;</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -117,6 +117,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -165,6 +166,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -182,13 +184,18 @@
   <ItemGroup>
     <ClInclude Include="camera.h" />
     <ClInclude Include="compute.h" />
-    <ClInclude Include="compute_job.h" />
+    <ClInclude Include="compute_buffer.h" />
+    <ClInclude Include="compute_buffer_vulkan.h" />
+    <ClInclude Include="compute_job_vulkan.h" />
+    <ClInclude Include="example_compute_job.h" />
     <ClInclude Include="event_object.h" />
     <ClInclude Include="mandelbrot_compute_job.h" />
+    <ClInclude Include="raytracer_compute.h" />
     <ClInclude Include="raytracer_ispc.h" />
     <ClInclude Include="object_queue.h" />
     <ClInclude Include="perf_timer.h" />
     <ClInclude Include="raytracer.h" />
+    <ClInclude Include="shaders\raytracer_glsl.h" />
     <ClInclude Include="spin_lock.h" />
     <ClInclude Include="test.h" />
     <ClInclude Include="material.h" />
@@ -207,7 +214,8 @@
     <ClInclude Include="vulkan_utils.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="compute_job.cpp">
+    <ClCompile Include="compute_buffer_vulkan.cpp" />
+    <ClCompile Include="example_compute_job.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>
@@ -230,6 +238,10 @@
     <ClCompile Include="perf_timer.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">pch.h</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
+      <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="raytracer_compute.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>
@@ -337,8 +349,8 @@
   <ItemGroup>
     <CustomBuild Include="shaders\test_vulkan.comp">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslangValidator.exe -G -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">glslangValidator.exe -G -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslc -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">glslc -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">GLSL to SPIR-V</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)shaders\%(Filename).spv</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
@@ -352,9 +364,24 @@
   <ItemGroup>
     <CustomBuild Include="shaders\mandelbrot.comp">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslangValidator.exe -G -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">glslangValidator.exe -G -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslc -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">glslc -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">GLSL to SPIR-V</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">GLSL to SPIR-V</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)shaders\%(Filename).spv</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</BuildInParallel>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)shaders\%(Filename).spv</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <BuildInParallel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</BuildInParallel>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\raytracer.comp">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">glslc.exe -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">GLSL to SPIR-V</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">glslc.exe -DGLSL -o $(SolutionDir)shaders\%(Filename).spv %(FullPath)</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">GLSL to SPIR-V</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)shaders\%(Filename).spv</Outputs>
       <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>

@@ -2,9 +2,15 @@
 
 #include "assert.h"
 #include "compute.h"
+#include "compute_buffer_vulkan.h"
+#include "compute_job_vulkan.h"
 #include "spin_lock.h"
 #include "thread_pool.h"
 #include "vulkan_utils.h"
+
+// Ray tracing
+#include "camera.h"
+#include "scene.h"
 
 #include <string>
 #include <vulkan/vulkan.h>
@@ -14,26 +20,13 @@ namespace pk
 {
 
 //
-// Example Vulkan compute job.
-// You should copy and modify it to do something interesting.
-//
-// Assumes your compute shader has:
-// . entry point named main()
-// . single uniform buffer for input
-// . one storage buffer for input
-// . one storage buffer for output
+// Raytracer implemented as a Vulkan compute job
 //
 
-class IComputeJobVulkan {
+class RayTracerJob final : public virtual IComputeJob, public IComputeJobVulkan {
 public:
-    // Mandatory Vulkan members; assigned by the Vulkan implementation of computeSubmitJob()
-    VulkanContext vulkan;
-};
-
-
-class ComputeJob final : public virtual IComputeJob, public IComputeJobVulkan {
-public:
-    static std::unique_ptr<ComputeJob> create( compute_t hCompute ); // factory method
+    // factory method
+    static std::unique_ptr<RayTracerJob> create( compute_t hCompute, uint32_t inputWidth, uint32_t inputHeight, uint32_t outputWidth, uint32_t outputHeight );
 
     // IComputeJob
     virtual void init();                           // allocate resources: load shader; allocate buffers, bind descriptors
@@ -41,38 +34,36 @@ public:
     virtual void submit();                         // submit command buffer to queue; DO NOT BLOCK in this function
     virtual void postsubmit( uint32_t timeoutMS ); // block until shader complete; do something with output, e.g. copy to CPU or pass to next compute job
 
-    uint32_t inputWidth;
-    uint32_t inputHeight;
-    uint32_t outputWidth;
-    uint32_t outputHeight;
-    void     save( const std::string path );
+    int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, bool recursive );
 
-protected:
-    ComputeJob()                     = delete;
-    ComputeJob( const ComputeJob & ) = delete;
-    ComputeJob &operator=( const ComputeJob & ) = delete;
+    virtual ~RayTracerJob()
+    {
+        _destroy();
+    }
 
-    ComputeJob( compute_t hCompute ) :
+    ComputeBufferVulkan uniformBuffer;
+    ComputeBufferVulkan inputBuffer;
+    ComputeBufferVulkan outputBuffer;
+
+private:
+    RayTracerJob()                      = delete;
+    RayTracerJob( const RayTracerJob& ) = delete;
+    RayTracerJob& operator=( const RayTracerJob& ) = delete;
+
+    RayTracerJob( compute_t hCompute, uint32_t inputWidth, uint32_t inputHeight, uint32_t outputWidth, uint32_t outputHeight ) :
         IComputeJob( hCompute ),
         initialized( false ),
-        inputWidth( 1 ),
-        inputHeight( 1 ),
-        outputWidth( 640 ),
-        outputHeight( 480 )
+        inputWidth( inputWidth ),
+        inputHeight( inputHeight ),
+        outputWidth( outputWidth ),
+        outputHeight( outputHeight )
     {
         numInstances++;
     }
 
-public:
-    virtual ~ComputeJob()
-    {
-        _destroy();
-        handle = INVALID_COMPUTE_JOB;
-    }
-
     void _destroy();
 
-protected:
+private:
     static std::atomic<uint32_t> numInstances;
 
     // *****************************************************************************
@@ -83,26 +74,18 @@ protected:
     static VulkanUtils::ComputeShaderProgram shaderProgram;
 
     // *****************************************************************************
-    // Methods and members below are specific to a shader instance
+    // Methods and members below are shader-specific
     // *****************************************************************************
     bool initialized;
     bool destroyed;
+    uint32_t inputWidth;
+    uint32_t inputHeight;
+    uint32_t outputWidth;
+    uint32_t outputHeight;
 
     VulkanUtils::ComputeShaderInstance shader;
-
-    // Shader inputs
-    VkBuffer       uniformBuffer;
-    VkDeviceMemory uniformBufferMemory;
-    uint32_t       uniformBufferSize;
-
-    VkBuffer       inputBuffer;
-    VkDeviceMemory inputBufferMemory;
-    uint32_t       inputBufferSize;
-
-    // Shader outputs
-    VkBuffer       outputBuffer;
-    VkDeviceMemory outputBufferMemory;
-    uint32_t       outputBufferSize;
 };
+
+typedef std::unique_ptr<RayTracerJob> RayTracerJobPtr;
 
 } // namespace pk
