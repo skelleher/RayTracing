@@ -198,10 +198,8 @@
     <CustomBuild Include="shaders\mandelbrot.comp">
       <Filter>Source Files\ComputeJobs</Filter>
     </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="shaders\raytracer.comp">
+    <CustomBuild Include="shaders\raytracer.comp">
       <Filter>Source Files\ComputeJobs</Filter>
-    </None>
+    </CustomBuild>
   </ItemGroup>
 </Project>
