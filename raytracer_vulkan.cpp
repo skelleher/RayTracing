@@ -37,13 +37,17 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     render_context_glsl_t* pdContext = (render_context_glsl_t*)job->uniformBuffer.mapped;
     //pdContext->camera         = pdCamera;
     //pdContext->scene          = pdScene;
-    pdContext->numSceneObjects = (uint32_t)scene.objects.size();
-    pdContext->outputHeight    = rows;
-    pdContext->outputWidth     = cols;
-    pdContext->num_aa_samples  = num_aa_samples;
-    pdContext->max_ray_depth   = max_ray_depth;
-    pdContext->gammaCorrection = true;
-    pdContext->debug           = debug;
+    pdContext->numSceneObjects      = (uint32_t)scene.objects.size();
+    pdContext->outputHeight         = rows;
+    pdContext->outputWidth          = cols;
+    pdContext->num_aa_samples       = num_aa_samples;
+    pdContext->max_ray_depth        = max_ray_depth;
+    pdContext->applyGammaCorrection = true;
+    pdContext->debug                = debug;
+    pdContext->monochrome           = true;
+    pdContext->magic                = 0xDEADBEEF;
+
+    //printf("*** sizeof(vector4) = %zd\n", sizeof(pdContext->foo));
 
     // Create a copy of the Camera on the device [ gross hack because Camera is created in main() since before I refactored for CUDA ]
     //Camera* pdCamera = nullptr;

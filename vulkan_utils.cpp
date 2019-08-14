@@ -142,10 +142,12 @@ result _createBuffer( VulkanContext& vulkan, size_t bufferSize, VkBuffer* pBuffe
     bufferCreateInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferCreateInfo.size               = bufferSize;
     bufferCreateInfo.usage              = usage;
-    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE;
+    bufferCreateInfo.sharingMode        = VK_SHARING_MODE_EXCLUSIVE; // only used by one queue at a time
 
     CHECK_VK( vkCreateBuffer( vulkan.device, &bufferCreateInfo, nullptr, pBuffer ) );
 
+    // This works for Uniform and Stoage buffers; for images
+    // call vkGetImageMemoryRequirements()
     VkMemoryRequirements memoryRequirements = {};
     vkGetBufferMemoryRequirements( vulkan.device, *pBuffer, &memoryRequirements );
 

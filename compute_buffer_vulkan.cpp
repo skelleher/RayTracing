@@ -2,7 +2,6 @@
 
 #include "vulkan_utils.h"
 
-
 namespace pk
 {
 
@@ -104,6 +103,7 @@ void ComputeBufferVulkan::unmap()
         _allocate( dims );
 
     vkUnmapMemory( vulkan.device, vkBufferMemory );
+    mapped = nullptr;
 }
 
 

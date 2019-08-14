@@ -1,52 +1,14 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-#include "raytracer_glsl.h"
 
+#include "raytracer_glsl.h"
 
 // For details on GLSL layout syntax see: https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)
 
 // TODO: use specialization constants to configure the shader at pipeline construction time
 #define WORKGROUP_SIZE 32
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1 ) in;
-
-//layout(std140, binding = 0) uniform UniformBufferObject {
-//    uint outputWidth;
-//    uint outputHeight;
-//    bool applyGammaCorrection;
-//
-//    // TODO: camera and other uniforms
-//} ubo;
-
-//layout(std140, binding = 0) uniform render_context_glsl_t {
-layout(std140, binding = 0) uniform UniformBufferObject {
-    uint outputHeight;
-    uint outputWidth;
-    float camera_origin[ 3 ];
-    float camera_vfov;
-    float camera_aspect;
-    float camera_aperture;
-    float camera_lookat[ 3 ];
-    float camera_focusDistance;
-    //    sphere_glsl_t          scene[];
-    //    material_glsl_t        materials[];
-    uint numSceneObjects;
-    uint num_aa_samples;
-    uint max_ray_depth;
-    bool applyGammaCorrection;
-    bool debug;
-} ubo;
-
-layout(std140, binding = 1) buffer inputBuffer
-{
-    uint unused;
-    // TODO: sphere_t[], material_t[]
-};
-
-layout(std140, binding = 2) buffer outputBuffer
-{
-   pixel imageData[];
-};
 
 
 void main() {
@@ -62,8 +24,13 @@ void main() {
     float y = float(gl_GlobalInvocationID.y) / float(height);
 
     // Render each tile in a different color, with red outline
-    vec4 color = vec4(255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 255.0 * float(gl_WorkGroupID.y) / float(gl_NumWorkGroups.y), 255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 1);
-    if (gl_LocalInvocationID.x == 0 || gl_LocalInvocationID.y == 0)
+    vec4 color;
+    if (ubo.monochrome)
+        color = vec4(x*y, x*y, x*y, 1);
+    else
+        color = vec4(255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 255.0 * float(gl_WorkGroupID.y) / float(gl_NumWorkGroups.y), 255.0 * float(gl_WorkGroupID.x) / float(gl_NumWorkGroups.x), 1);
+
+    if (ubo.debug && (gl_LocalInvocationID.x == 0 || gl_LocalInvocationID.y == 0))
     {
         color = vec4(255, 0, 0, 1);
     }
@@ -71,6 +38,10 @@ void main() {
     // Apply 2.0 Gamma correction
     if (ubo.applyGammaCorrection)
         color = vec4( sqrt( color.r ), sqrt( color.g ), sqrt( color.b ), 1.0 );
+
+    // Test for bad struct alignment (happens if the programmer forgets to align every field)
+    if (ubo.magic != 0xDEADBEEF)
+        color = vec4(1,0,1,1);
 
     imageData[width * gl_GlobalInvocationID.y + gl_GlobalInvocationID.x].rgba = color;
 }

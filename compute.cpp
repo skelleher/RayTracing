@@ -15,6 +15,8 @@
 #include <vulkan/vulkan.h>
 
 
+// TODO: See the Vulkan Programming Guide for a custom memory allocator example.
+
 namespace pk
 {
 
