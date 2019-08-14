@@ -1,5 +1,6 @@
 #include "raytracer_compute.h"
 
+#include "log.h"
 #include "perf_timer.h"
 #include "raytracer_glsl.h"
 #include "utils.h"

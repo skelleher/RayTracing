@@ -1,5 +1,6 @@
 #include "mandelbrot_compute_job.h"
 
+#include "log.h"
 #include "perf_timer.h"
 #include "utils.h"
 #include "vulkan_utils.h"

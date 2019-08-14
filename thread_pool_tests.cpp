@@ -1,3 +1,4 @@
+#include "log.h"
 #include "perf_timer.h"
 #include "thread_pool.h"
 #include "utils.h"

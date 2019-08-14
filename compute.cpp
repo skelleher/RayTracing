@@ -2,6 +2,7 @@
 
 #include "compute_job_vulkan.h"
 #include "event_object.h"
+#include "log.h"
 #include "object_queue.h"
 #include "perf_timer.h"
 #include "spin_lock.h"
@@ -273,6 +274,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL _debugReportCallbackFn(
     void*                      pUserData )
 {
     printf( "[VK]: %s: %s\n", pLayerPrefix, pMessage );
+    RETAIL( ZONE_ERROR, "[VK]: %s: %s\n", pLayerPrefix, pMessage );
 
     return VK_FALSE;
 }

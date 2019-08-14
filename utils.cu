@@ -1,3 +1,4 @@
+#include "log.h"
 #include "utils.h"
 #include "result.h"
 

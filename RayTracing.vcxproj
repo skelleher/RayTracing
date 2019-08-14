@@ -189,6 +189,7 @@
     <ClInclude Include="compute_job_vulkan.h" />
     <ClInclude Include="example_compute_job.h" />
     <ClInclude Include="event_object.h" />
+    <ClInclude Include="log.h" />
     <ClInclude Include="mandelbrot_compute_job.h" />
     <ClInclude Include="raytracer_compute.h" />
     <ClInclude Include="raytracer_ispc.h" />
@@ -227,6 +228,7 @@
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>
     </ClCompile>
+    <ClCompile Include="log.cpp" />
     <ClCompile Include="mandelbrot_compute_job.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</ForcedIncludeFiles>
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</ForcedIncludeFiles>

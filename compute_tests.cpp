@@ -1,5 +1,6 @@
 #include "compute.h"
 #include "example_compute_job.h"
+#include "log.h"
 #include "mandelbrot_compute_job.h"
 #include "utils.h"
 

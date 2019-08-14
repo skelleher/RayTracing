@@ -1,5 +1,6 @@
 #include "compute_buffer_vulkan.h"
 
+#include "log.h"
 #include "vulkan_utils.h"
 
 namespace pk
@@ -59,7 +60,7 @@ bool ComputeBufferVulkan::resize( const ComputeBufferDims& dims )
     // TODO: still not thread-safe; can't modify a descriptorSet if it
     // is in use by a command buffer on the GPU.
 
-    printf( "ComputeBufferVulkan::resize( %zd x %zd x %zd )\n", dims.width, dims.height, dims.elementSize );
+    //printf( "ComputeBufferVulkan::resize( %zd x %zd x %zd )\n", dims.width, dims.height, dims.elementSize );
 
     // Make a copy, since _deallocate() zeros .dims,
     // and caller may have passed a reference to .dims into this method

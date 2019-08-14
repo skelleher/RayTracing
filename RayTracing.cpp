@@ -4,6 +4,7 @@
 #include "argsparser.h"
 #include "camera.h"
 #include "compute.h"
+#include "log.h"
 #include "material.h"
 #include "msg_queue.h"
 #include "perf_timer.h"
@@ -50,6 +51,8 @@ typedef enum {
 
 int main( int argc, char** argv )
 {
+    Log::OpenWithFilename( "raytracing.log" );
+
     //
     // Parse command-line args
     //
@@ -193,7 +196,6 @@ int main( int argc, char** argv )
             renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
     }
 
-
     //
     // Save image
     //
@@ -226,6 +228,8 @@ int main( int argc, char** argv )
 
     threadPoolDestroy( tp );
 
+    Log::Close();
+
     return 0;
 }
 
@@ -257,7 +261,7 @@ static Scene* _randomScene()
     //scene->objects.push_back( new Sphere( vector3( 4, 1, 0 ), 1.0f, new material_t( MATERIAL_METAL, vector3( 0.7f, 0.6f, 0.5f ), 0.0f ) ) );
 
     scene->objects.push_back( new Sphere( vector3( 0, 0, -1 ), 0.5f, new material_t( MATERIAL_DIFFUSE, vector3( 0.4f, 0.2f, 0.1f ) ) ) );
-    scene->objects.push_back( new Sphere( vector3( 0, -100.5f, -1 ), 100.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.5f, 0.5f, 0.5f ) ) ) );
+    //scene->objects.push_back( new Sphere( vector3( 0, -100.5f, -1 ), 100.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.5f, 0.5f, 0.5f ) ) ) );
 
     return scene;
 }

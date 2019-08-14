@@ -114,6 +114,9 @@
     <ClInclude Include="shaders\raytracer_glsl.h">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClInclude>
+    <ClInclude Include="log.h">
+      <Filter>Source Files\common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RayTracing.cpp">
@@ -170,6 +173,9 @@
     <ClCompile Include="compute_buffer_vulkan.cpp">
       <Filter>Source Files\ComputeJobs</Filter>
     </ClCompile>
+    <ClCompile Include="log.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="test.cu">
@@ -198,8 +204,10 @@
     <CustomBuild Include="shaders\mandelbrot.comp">
       <Filter>Source Files\ComputeJobs</Filter>
     </CustomBuild>
-    <CustomBuild Include="shaders\raytracer.comp">
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\raytracer.comp">
       <Filter>Source Files\ComputeJobs</Filter>
-    </CustomBuild>
+    </None>
   </ItemGroup>
 </Project>

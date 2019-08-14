@@ -1,5 +1,6 @@
 #include "example_compute_job.h"
 
+#include "log.h"
 #include "compute_buffer.h"
 #include "perf_timer.h"
 #include "utils.h"

@@ -5,6 +5,7 @@
 #include "vulkan_utils.h"
 
 #include "compute_buffer_vulkan.h"
+#include "log.h"
 #include "utils.h"
 
 #include <assert.h>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "log.h"
 #include "perf_timer.h"
 #include "result.h"
 #include "spin_lock.h"

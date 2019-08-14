@@ -1,5 +1,6 @@
 #include "raytracer.h"
 
+#include "log.h"
 #include "material.h"
 #include "perf_timer.h"
 #include "ray.h"

@@ -4,9 +4,9 @@
 
 #include "raytracer_glsl.h"
 
-//#define DIFFUSE_SHADE
+#define DIFFUSE_SHADE
 //#define NORMAL_SHADE
-#define MATERIAL_SHADE
+//#define MATERIAL_SHADE
 
 #define FLT_MAX 3.402823466e+38
 #define FLT_MIN 1.175494351e-38
@@ -186,6 +186,7 @@ vec3 _color( const ray r, uint max_depth )
 
     for ( uint i = 0; i < max_depth; i++ ) {
         if ( _sceneHit( scattered, 0.001f, FLT_MAX, hit ) ) {
+        //if ( _sphereHit( scattered, scene[1], 0.001f, FLT_MAX, hit ) ) {
 #if defined( NORMAL_SHADE )
             vec3 normal;
             vec3 p = _pointOnRay( r, hit.dist );
@@ -199,6 +200,10 @@ vec3 _color( const ray r, uint max_depth )
             return normal;
 #elif defined( DIFFUSE_SHADE )
             vec3 randBounce = _randomInUnitSphere();
+            //vec3 randBounce = vec3(_random(), _random(), _random());
+            //hit.normal.x = _random();
+            //hit.normal.y = _random();
+            //hit.normal.z = _random();
 
             vec3 target;
             target.x = hit.point.x + hit.normal.x + randBounce.x;
@@ -520,20 +525,6 @@ vec3 _sky( float u, float v )
 //
 // Utils
 //
-
-//double dseed = 1.0;
-//double drand48( const vec3 v )
-//{
-//    double d     = 12.9898 * v.x + 78.233 * v.y;
-//    double x     = sin( d ) * 43758.5453;
-//    double fract = x - floor( x );
-//    double rval  = 2.0 * (fract)-1.0;
-//    rval         = ( 1.0 - abs( rval * dseed ) );
-//
-//    dseed = rval;
-//
-//    return rval;
-//}
 
 float _random()
 {

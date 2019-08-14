@@ -1,5 +1,6 @@
 #pragma once
 
+#include "log.h"
 #include "ray.h"
 #include "utils.h"
 #include "vector_cuda.h"
@@ -40,17 +41,17 @@ public:
         horizontal = 2 * halfWidth * focusDistance * u;
         vertical   = 2 * halfHeight * focusDistance * v;
 
-        printf( "Camera(): \nfov %4.1f \naspect %4.1f \naperture %4.1f \n(%f, %f, %f) -> (%f, %f, %f) \n focusDistance %f\n",
-            vfov, aspect, aperture, origin.x, origin.y, origin.z, lookat.x, lookat.y, lookat.z, focusDistance );
+        //printf( "Camera(): \nfov %4.1f \naspect %4.1f \naperture %4.1f \n(%f, %f, %f) -> (%f, %f, %f) \n focusDistance %f\n",
+        //    vfov, aspect, aperture, origin.x, origin.y, origin.z, lookat.x, lookat.y, lookat.z, focusDistance );
 
-        printf( "u[%f, %f, %f] \nv[%f, %f, %f] \nw[%f, %f, %f] \nhorizontal[%f, %f, %f] \nvertical[%f, %f, %f]\n",
-            u.x, u.y, u.z,
-            v.x, v.y, v.z,
-            w.x, w.y, w.z,
-            horizontal.x, horizontal.y, horizontal.z,
-            vertical.x, vertical.y, vertical.z
-        );
-}
+        //printf( "u[%f, %f, %f] \nv[%f, %f, %f] \nw[%f, %f, %f] \nhorizontal[%f, %f, %f] \nvertical[%f, %f, %f]\n",
+        //    u.x, u.y, u.z,
+        //    v.x, v.y, v.z,
+        //    w.x, w.y, w.z,
+        //    horizontal.x, horizontal.y, horizontal.z,
+        //    vertical.x, vertical.y, vertical.z
+        //);
+    }
 
     __host__ __device__ Camera( const Camera& rhs ) :
         origin( rhs.origin ),

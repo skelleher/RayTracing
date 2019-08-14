@@ -17,8 +17,8 @@ typedef enum {
 } result;
 
 
-#define SUCCESS( x ) ( ar::R_OK == ( x ) ? true : false )
-#define FAIL( x ) ( ar::R_OK != ( x ) ? true : false )
+#define SUCCESS( x ) ( pk::R_OK == ( x ) ? true : false )
+#define FAIL( x ) ( pk::R_OK != ( x ) ? true : false )
 
 // Check boolean for failure
 #define CBR( x )               \
@@ -33,7 +33,7 @@ typedef enum {
 #define CPR( x )                       \
     {                                  \
         if ( NULL == ( x ) ) {         \
-            rval = ar::R_NULL_POINTER; \
+            rval = pk::R_NULL_POINTER; \
             goto Exit;                 \
         }                              \
     }

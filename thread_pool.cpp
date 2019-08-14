@@ -5,6 +5,7 @@
 #include "thread_pool.h"
 
 #include "event_object.h"
+#include "log.h"
 #include "object_queue.h"
 #include "perf_timer.h"
 #include "spin_lock.h"
