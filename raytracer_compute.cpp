@@ -107,7 +107,7 @@ void RayTracerJob::postsubmit( uint32_t timeoutMS )
 {
     //printf( "RayTracerJob[%d:%d]::postsubmit()\n", hCompute, handle );
 
-    uint64_t timeoutNS = timeoutMS * 1000000;
+    uint64_t timeoutNS = timeoutMS * 1'000'000;
     VkResult rval      = vkWaitForFences( vulkan.device, 1, &shader.fence, VK_TRUE, timeoutNS );
 
     if ( rval == VK_TIMEOUT ) {

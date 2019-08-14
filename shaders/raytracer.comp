@@ -4,15 +4,32 @@
 
 #include "raytracer_glsl.h"
 
-#define DIFFUSE_SHADE
+//#define DIFFUSE_SHADE
 //#define NORMAL_SHADE
-//#define MATERIAL_SHADE
+#define MATERIAL_SHADE
 
 #define FLT_MAX 3.402823466e+38
 #define FLT_MIN 1.175494351e-38
 #define DBL_MAX 1.7976931348623158e+308
 #define DBL_MIN 2.2250738585072014e-308
 
+// Must match enum material_type_t in material.h
+const uint MATERIAL_NONE    = 0;
+const uint MATERIAL_DIFFUSE = 1;
+const uint MATERIAL_METAL   = 2;
+const uint MATERIAL_GLASS   = 3;
+
+struct ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+struct hit_info_t {
+    float dist;
+    vec3  point;
+    vec3  normal;
+    uint  materialID;
+};
 
 // For details on GLSL layout syntax see: https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)
 
@@ -20,7 +37,6 @@
 #define WORKGROUP_SIZE 32
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1 ) in;
 
-void _cameraInit( render_context_glsl_t ubo );
 ray _cameraGetRay( float u, float v );
 
 vec3 _blockColor( uint blockID, uint totalBlocks );
@@ -30,12 +46,12 @@ vec3 _background( const ray r );
 vec3 _sky( float u, float v );
 
 vec3 _color( const ray r, uint max_depth );
-bool _sceneHit( const ray r, float t_min, float t_max, out hit_info_glsl_t p_hit );
-bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_glsl_t p_hit );
-bool _materialScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
-bool _diffuseScatter ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
-bool _metalScatter   ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
-bool _glassScatter   ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _sceneHit( const ray r, float t_min, float t_max, out hit_info_t p_hit );
+bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_t p_hit );
+bool _materialScatter( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _diffuseScatter ( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _metalScatter   ( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _glassScatter   ( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered );
 
 vec3  _pointOnRay( const ray r, float dist );
 vec3  _reflect( const vec3 v, const vec3 normal );
@@ -47,12 +63,6 @@ vec3  _randomInUnitSphere();
 vec3  _randomOnUnitDisk();
 float _random();
 
-// Redeclare the input arrays so we can index them
-//sphere_glsl_t   scene[length(scene)];
-//material_glsl_t materials[length(materials)];
-
-camera_glsl_t g_camera;
-
 
 void main() {
     uint width = ubo.outputWidth;
@@ -62,6 +72,8 @@ void main() {
     //  We terminate those threads here. 
     if (gl_GlobalInvocationID.x >= width || gl_GlobalInvocationID.y >= height)
         return;
+
+    _randomInit( ubo.clock_ticks );
 
     uint blockID     = uint( gl_WorkGroupID.x + gl_WorkGroupID.y + gl_WorkGroupID.z );
     uint totalBlocks = uint( gl_NumWorkGroups.x + gl_NumWorkGroups.y + gl_NumWorkGroups.z );
@@ -87,16 +99,7 @@ void main() {
     {
         for ( uint s = 0; s < ubo.num_aa_samples; s++ )
         {
-            //ray r = _cameraGetRay( u, v );
-
-            vec3 leftCorner = vec3(-2, 1, -1);
-            vec3 horizontal = vec3(4.0, 0.0, 0.0);
-            vec3 vertical   = vec3(0.0, -2.0, 0.0);
-            vec3 origin     = vec3(0.0, 0.0, 0.0);
-
-            ray r;
-            r.origin = origin;
-            r.direction = leftCorner + u*horizontal + v*vertical;
+            ray r = _cameraGetRay( u, v );
 
             vec3 _sample  = _color( r, ubo.max_ray_depth );
             //vec3 _sample = _blockColor( blockID, totalBlocks );
@@ -132,61 +135,15 @@ void main() {
 // Renderer
 //
 
-void _cameraInit( render_context_glsl_t ubo )
-{
-    //print( "cameraInitISPC\n" );
-
-    g_camera.origin.x      = ubo.camera_origin.x;
-    g_camera.origin.y      = ubo.camera_origin.y;
-    g_camera.origin.z      = ubo.camera_origin.z;
-    g_camera.lookat.x      = ubo.camera_lookat.x;
-    g_camera.lookat.y      = ubo.camera_lookat.y;
-    g_camera.lookat.z      = ubo.camera_lookat.z;
-    g_camera.vfov          = ubo.camera_vfov;
-    g_camera.aspect        = ubo.camera_aspect;
-    g_camera.aperture      = ubo.camera_aperture;
-    g_camera.focusDistance = ubo.camera_focusDistance;
-
-    g_camera.lensRadius = g_camera.aperture / 2.0f;
-
-    float theta      = radians( g_camera.vfov );
-    float halfHeight = float(tan( theta / 2.0f ));
-    float halfWidth  = g_camera.aspect * halfHeight;
-
-    g_camera.w.x = g_camera.origin.x - g_camera.lookat.x;
-    g_camera.w.y = g_camera.origin.y - g_camera.lookat.y;
-    g_camera.w.z = g_camera.origin.z - g_camera.lookat.z;
-    g_camera.w   = normalize( g_camera.w );
-
-    vec3 up = { 0, 1, 0 };
-    g_camera.u   = cross( up, g_camera.w );
-    g_camera.u   = normalize( g_camera.u );
-    g_camera.v   = cross( g_camera.w, g_camera.u );
-
-    g_camera.leftCorner.x = g_camera.origin.x - halfWidth * g_camera.focusDistance * g_camera.u.x - halfHeight * g_camera.focusDistance * g_camera.v.x - g_camera.focusDistance * g_camera.w.x;
-    g_camera.leftCorner.y = g_camera.origin.y - halfWidth * g_camera.focusDistance * g_camera.u.y - halfHeight * g_camera.focusDistance * g_camera.v.y - g_camera.focusDistance * g_camera.w.y;
-    g_camera.leftCorner.z = g_camera.origin.z - halfWidth * g_camera.focusDistance * g_camera.u.z - halfHeight * g_camera.focusDistance * g_camera.v.z - g_camera.focusDistance * g_camera.w.z;
-
-    g_camera.horizontal.x = 2 * halfWidth * g_camera.focusDistance * g_camera.u.x;
-    g_camera.horizontal.y = 2 * halfWidth * g_camera.focusDistance * g_camera.u.y;
-    g_camera.horizontal.z = 2 * halfWidth * g_camera.focusDistance * g_camera.u.z;
-
-    g_camera.vertical.x   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.x;
-    g_camera.vertical.y   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.y;
-    g_camera.vertical.z   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.z;
-}
-
-
 vec3 _color( const ray r, uint max_depth )
 {
-    hit_info_glsl_t hit;
+    hit_info_t hit;
     vec3            attenuation;
     ray             scattered = r;
     vec3            color = vec3( 1.0f, 1.0f, 1.0f );
 
     for ( uint i = 0; i < max_depth; i++ ) {
         if ( _sceneHit( scattered, 0.001f, FLT_MAX, hit ) ) {
-        //if ( _sphereHit( scattered, scene[1], 0.001f, FLT_MAX, hit ) ) {
 #if defined( NORMAL_SHADE )
             vec3 normal;
             vec3 p = _pointOnRay( r, hit.dist );
@@ -200,10 +157,6 @@ vec3 _color( const ray r, uint max_depth )
             return normal;
 #elif defined( DIFFUSE_SHADE )
             vec3 randBounce = _randomInUnitSphere();
-            //vec3 randBounce = vec3(_random(), _random(), _random());
-            //hit.normal.x = _random();
-            //hit.normal.y = _random();
-            //hit.normal.z = _random();
 
             vec3 target;
             target.x = hit.point.x + hit.normal.x + randBounce.x;
@@ -237,7 +190,7 @@ vec3 _color( const ray r, uint max_depth )
 }
 
 
-bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_glsl_t p_hit )
+bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_t p_hit )
 {
     vec3 oc;
     oc.x = r.origin.x - sphere.center_x;
@@ -282,14 +235,14 @@ bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_m
 }
 
 
-bool  _sceneHit( const ray r, float t_min, float t_max, out hit_info_glsl_t p_hit )
+bool  _sceneHit( const ray r, float t_min, float t_max, out hit_info_t p_hit )
 {
     bool     rval         = false;
     float    closestSoFar = t_max;
-    hit_info_glsl_t hit;
+    hit_info_t hit;
 
     for ( int i = 0; i < ubo.sceneSize; i++ ) {
-        hit_info_glsl_t tmp;
+        hit_info_t tmp;
         sphere_glsl_t sphere = scene[i];
         if ( _sphereHit( r, sphere, t_min, closestSoFar, tmp ) ) {
             rval         = true;
@@ -309,7 +262,7 @@ bool  _sceneHit( const ray r, float t_min, float t_max, out hit_info_glsl_t p_hi
 //
 
 
-bool _materialScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+bool _materialScatter( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered )
 {
     bool rval = false;
 
@@ -331,7 +284,7 @@ bool _materialScatter( const ray r, uint materialID, const hit_info_glsl_t hit, 
 }
 
 
-bool _diffuseScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+bool _diffuseScatter( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered )
 {
     vec3 target    = hit.point + hit.normal;
     target = target + _randomInUnitSphere();
@@ -350,7 +303,7 @@ bool _diffuseScatter( const ray r, uint materialID, const hit_info_glsl_t hit, o
 }
 
 
-bool _metalScatter( const ray r,  uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+bool _metalScatter( const ray r,  uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered )
 {
     vec3 direction = normalize( r.direction );
     vec3 reflected = _reflect( direction, hit.normal );
@@ -370,7 +323,7 @@ bool _metalScatter( const ray r,  uint materialID, const hit_info_glsl_t hit, ou
 }
 
 
-bool _glassScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+bool _glassScatter( const ray r, uint materialID, const hit_info_t hit, out vec3 p_attenuation, out ray p_scattered )
 {
     vec3  outwardNormal;
     vec3  reflected = _reflect( r.direction, hit.normal );
@@ -425,17 +378,15 @@ bool _glassScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out
 
 ray _cameraGetRay( float s, float t )
 {
-//    vec3 rand   = g_camera.lensRadius * _randomOnUnitDisk(); // calling _randomOnUnitDisk() cuts frame rate in half
-//    vec3 offset = g_camera.u * rand.x + g_camera.v * rand.y;
+    vec3 rand   = ubo.camera.lensRadius * _randomOnUnitDisk(); // calling _randomOnUnitDisk() cuts frame rate in half
+    vec3 offset = ubo.camera.u * rand.x + ubo.camera.v * rand.y;
 
-    vec3 offset = vec3(0,0,0);
-
-    vec3 origin    = vec3( g_camera.origin.x + offset.x, g_camera.origin.y + offset.y, g_camera.origin.z + offset.z );
+    vec3 origin    = vec3( ubo.camera.origin.x + offset.x, ubo.camera.origin.y + offset.y, ubo.camera.origin.z + offset.z );
 
     vec3 direction;
-    direction.x = g_camera.leftCorner.x + ( s * g_camera.horizontal.x ) + ( ( 1.0f - t ) * g_camera.vertical.x ) - g_camera.origin.x - offset.x;
-    direction.y = g_camera.leftCorner.y + ( s * g_camera.horizontal.y ) + ( ( 1.0f - t ) * g_camera.vertical.y ) - g_camera.origin.y - offset.y;
-    direction.z = g_camera.leftCorner.z + ( s * g_camera.horizontal.z ) + ( ( 1.0f - t ) * g_camera.vertical.z ) - g_camera.origin.z - offset.z;
+    direction.x = ubo.camera.leftCorner.x + ( s * ubo.camera.horizontal.x ) + ( ( 1.0f - t ) * ubo.camera.vertical.x ) - ubo.camera.origin.x - offset.x;
+    direction.y = ubo.camera.leftCorner.y + ( s * ubo.camera.horizontal.y ) + ( ( 1.0f - t ) * ubo.camera.vertical.y ) - ubo.camera.origin.y - offset.y;
+    direction.z = ubo.camera.leftCorner.z + ( s * ubo.camera.horizontal.z ) + ( ( 1.0f - t ) * ubo.camera.vertical.z ) - ubo.camera.origin.z - offset.z;
 
     ray r;
     r.origin = origin;
@@ -526,53 +477,46 @@ vec3 _sky( float u, float v )
 // Utils
 //
 
-float _random()
+uint _seed;
+void _randomInit( uint seed )
 {
-    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
-    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
-
-    vec2 n = vec2(x, y);
-
-	float r = fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
-
-    return r;
+    uint threadIndex = (gl_GlobalInvocationID.x * gl_GlobalInvocationID.y * gl_GlobalInvocationID.z) + gl_LocalInvocationIndex; //gl_WorkGroupID * gl_WorkGroupSize + gl_LocalInvocationID;
+    _seed = (seed << threadIndex ) + threadIndex;
 }
 
-//float xorrand( uint seed )
-//{
-//    // Xorshift algorithm from George Marsaglia's paper
-//    seed ^= ( seed << 13 );
-//    seed ^= ( seed >> 17 );
-//    seed ^= ( seed << 5 );
-//
-//    return seed;
-//}
-//
-//uint wanghash( uint seed )
-//{
-//    seed = ( seed ^ 61 ) ^ ( seed >> 16 );
-//    seed *= 9;
-//    seed = seed ^ ( seed >> 4 );
-//    seed *= 0x27d4eb2d;
-//    seed = seed ^ ( seed >> 15 );
-//    return seed;
-//}
 
-//float _random()
-//{
-//    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
-//    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
-//
-//    //int64 foo = clockARB();
-//
-//    uint seed = 1;
-//    seed = wanghash( x + y * uint(clockARB()) );
-//    seed = uint(xorrand( seed ));
-//    // Generate a random float in [0, 1)...
-//    float f = float( seed ) * ( 1.0 / 4294967296.0 );
-//
-//    return f;
-//}
+uint xorrand( uint seed )
+{
+    // Xorshift algorithm from George Marsaglia's paper
+    seed ^= ( seed << 13 );
+    seed ^= ( seed >> 17 );
+    seed ^= ( seed << 5 );
+
+    return seed;
+}
+
+
+uint wanghash( uint seed )
+{
+    seed = ( seed ^ 61 ) ^ ( seed >> 16 );
+    seed *= 9;
+    seed = seed ^ ( seed >> 4 );
+    seed *= 0x27d4eb2d;
+    seed = seed ^ ( seed >> 15 );
+    return seed;
+}
+
+
+float _random()
+{
+    _seed = wanghash( _seed );
+    _seed = xorrand( _seed );
+
+    // Generate a random float in [0, 1)...
+    float f = float(_seed) * ( 1.0 / 4294967296.0 );
+
+    return f;
+}
 
 
 vec3 _pointOnRay( const ray r, float dist )
@@ -602,7 +546,8 @@ vec3 _randomInUnitSphere()
 vec3 _randomOnUnitDisk()
 {
     vec3 point;
-    uint maxTries = 20;
+//    uint maxTries = 10;
+    uint maxTries = 1;
     do {
         vec3 v1 = vec3( _random(), _random(), 0.0f );
         vec3 v2 = vec3( 1.0f, 1.0f, 0.0f );

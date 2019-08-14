@@ -6,10 +6,10 @@
 //  **** NOTE ****
 //
 //  Passing structs, and arrays of structs, from C++ to GLSL requires great care.
-//  All fields should be 4-byte aligned.
+//  All fields must be 4-byte aligned.
 //
-//  Don't pass arrays of floats. They will NOT have the same stride in C++ and GLSL.
-//  Use a vec4 or mat4 instead.
+//  Don't pass arrays of floats or arrays of structs when using packing std140.
+//  They will NOT have the same stride in C++ and GLSL.
 // 
 //  Don't pass vec3 (unless it is aligned to 16-bytes).
 //
@@ -17,8 +17,8 @@
 //  sizeof(bool) = 4 on GLSL but may be 1 or 8 on the host.
 //
 //
-// For the difference between GLSL layouts such as std140 and std430,
-// see: https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout
+//  For the difference between GLSL layouts such as std140 and std430,
+//  see: https://www.khronos.org/opengl/wiki/Interface_Block_(GLSL)#Memory_layout
 //
 
 
@@ -45,18 +45,6 @@ struct pixel {
     vec4 rgba;
 };
 
-struct ray {
-    vec3 origin;
-    vec3 direction;
-};
-
-
-//enum material_type_t
-const uint MATERIAL_NONE    = 0;
-const uint MATERIAL_DIFFUSE = 1;
-const uint MATERIAL_METAL   = 2;
-const uint MATERIAL_GLASS   = 3;
-
 // Any GLSL struct used in an array must be 4-byte aligned
 struct material_glsl_t {
     _ALIGN(4 ) uint  type;
@@ -67,15 +55,6 @@ struct material_glsl_t {
     _ALIGN(4 ) float refractionIndex;
 };
 
-
-struct hit_info_glsl_t {
-    float dist;
-    vec3  point;
-    vec3  normal;
-    uint  materialID;
-};
-
-
 // Any GLSL struct used in an array must be 4-byte aligned
 struct sphere_glsl_t {
     _ALIGN(4 ) float center_x;
@@ -85,7 +64,6 @@ struct sphere_glsl_t {
     _ALIGN(4 ) uint  materialID;
 };
 
-// Computed by the shader 
 struct camera_glsl_t {
     _ALIGN(16) vec3  origin;
     _ALIGN(16) vec3  lookat;
@@ -114,18 +92,11 @@ struct render_context_glsl_t {
 #endif
     _ALIGN(4 ) uint outputHeight;
     _ALIGN(4 ) uint outputWidth;
-
-    _ALIGN(4 ) float camera_vfov;
-    _ALIGN(4 ) float camera_aspect;
-    _ALIGN(4 ) float camera_aperture;
-    _ALIGN(4 ) float camera_focusDistance;
-    _ALIGN(16) vec3 camera_origin;
-    _ALIGN(16) vec3 camera_lookat;
-
+    _ALIGN(16) camera_glsl_t camera;
     _ALIGN(4 ) uint sceneSize;
     _ALIGN(4 ) uint num_aa_samples;
     _ALIGN(4 ) uint max_ray_depth;
-
+    _ALIGN(4)  uint clock_ticks; // for random number generator
     _ALIGN(4 ) bool applyGammaCorrection;
     _ALIGN(4 ) bool debug;
     _ALIGN(4 ) bool monochrome;
@@ -142,7 +113,6 @@ layout( std140, binding = 0 ) uniform _ubo
 #endif
 
 #ifdef GLSL
-//layout( std140, binding = 1 ) buffer _scene
 layout( std430, binding = 1 ) buffer _scene
 {
     uint sceneMagic;
@@ -151,7 +121,6 @@ layout( std430, binding = 1 ) buffer _scene
 #endif
 
 #ifdef GLSL
-//layout( std140, binding = 2 ) buffer _material
 layout( std430, binding = 2 ) buffer _material
 {
     uint materialsMagic;
@@ -160,7 +129,7 @@ layout( std430, binding = 2 ) buffer _material
 #endif
 
 #ifdef GLSL
-layout( std140, binding = 3 ) buffer _outputBuffer
+layout( std430, binding = 3 ) buffer _outputBuffer
 {
     pixel imageData[];
 };

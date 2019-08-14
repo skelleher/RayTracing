@@ -20,7 +20,8 @@
 namespace pk
 {
 
-static void      _createCamera( Camera* pdCamera );
+//static void      _createCamera( Camera* pdCamera );
+static void      _cameraInit( const Camera& camera, camera_glsl_t* p_camera );
 static compute_t hCompute;
 
 int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug )
@@ -47,16 +48,7 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     job->uniformBuffer.map();
     render_context_glsl_t* pdContext = (render_context_glsl_t*)job->uniformBuffer.mapped;
 
-    pdContext->camera_origin.x      = camera.origin.x;
-    pdContext->camera_origin.y      = camera.origin.y;
-    pdContext->camera_origin.z      = camera.origin.z;
-    pdContext->camera_lookat.x      = camera.lookat.x;
-    pdContext->camera_lookat.y      = camera.lookat.y;
-    pdContext->camera_lookat.z      = camera.lookat.z;
-    pdContext->camera_vfov          = camera.vfov;
-    pdContext->camera_aspect        = camera.aspect;
-    pdContext->camera_aperture      = camera.aperture;
-    pdContext->camera_focusDistance = camera.focusDistance;
+    _cameraInit( camera, &pdContext->camera );
 
     pdContext->sceneSize            = (uint32_t)scene.objects.size();
     pdContext->outputHeight         = rows;
@@ -67,6 +59,7 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     pdContext->debug                = debug;
     pdContext->monochrome           = true;
     pdContext->magic                = 0xDEADBEEF;
+    pdContext->clock_ticks          = (uint32_t)PerfTimer::SystemTimeMilliseconds();
 
     // Copy the Scene to device
     // Flatten the Scene object to an array of sphere_t, which is what Scene should've been in the first place
@@ -87,11 +80,6 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
         s2->center_z      = s1->center.z;
         s2->radius        = s1->radius;
         s2->materialID    = i;
-        //s2->materialID    = 0; // HACK: hard-code to material 0 for now
-
-        //s2->materialID    = 99;
-        //printf( "scene[%d] = %f, %f, %f r: %f m: %d\n",
-        //    i, s2->center_x, s2->center_y, s2->center_z, s2->radius, s2->materialID );
 
         i++;
         //p++;
@@ -162,6 +150,51 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     printf( "renderSceneVulkan: %f s\n", t.ElapsedSeconds() );
 
     return 0;
+}
+
+
+static void _cameraInit( const Camera& camera, camera_glsl_t* p_camera )
+{
+    p_camera->origin.x      = camera.origin.x;
+    p_camera->origin.y      = camera.origin.y;
+    p_camera->origin.z      = camera.origin.z;
+    p_camera->lookat.x      = camera.lookat.x;
+    p_camera->lookat.y      = camera.lookat.y;
+    p_camera->lookat.z      = camera.lookat.z;
+    p_camera->vfov          = camera.vfov;
+    p_camera->aspect        = camera.aspect;
+    p_camera->aperture      = camera.aperture;
+    p_camera->focusDistance = camera.focusDistance;
+
+    p_camera->lensRadius = p_camera->aperture / 2.0f;
+
+    float theta      = RADIANS( p_camera->vfov );
+    float halfHeight = float( tan( theta / 2.0f ) );
+    float halfWidth  = p_camera->aspect * halfHeight;
+
+    p_camera->w.x = p_camera->origin.x - p_camera->lookat.x;
+    p_camera->w.y = p_camera->origin.y - p_camera->lookat.y;
+    p_camera->w.z = p_camera->origin.z - p_camera->lookat.z;
+    //p_camera->w   = normalize( p_camera->w );
+    p_camera->w.normalize();
+
+    vec3 up     = { 0, 1, 0 };
+    p_camera->u = cross( up, p_camera->w );
+    //p_camera->u   = normalize( p_camera->u );
+    p_camera->u.normalize();
+    p_camera->v = cross( p_camera->w, p_camera->u );
+
+    p_camera->leftCorner.x = p_camera->origin.x - halfWidth * p_camera->focusDistance * p_camera->u.x - halfHeight * p_camera->focusDistance * p_camera->v.x - p_camera->focusDistance * p_camera->w.x;
+    p_camera->leftCorner.y = p_camera->origin.y - halfWidth * p_camera->focusDistance * p_camera->u.y - halfHeight * p_camera->focusDistance * p_camera->v.y - p_camera->focusDistance * p_camera->w.y;
+    p_camera->leftCorner.z = p_camera->origin.z - halfWidth * p_camera->focusDistance * p_camera->u.z - halfHeight * p_camera->focusDistance * p_camera->v.z - p_camera->focusDistance * p_camera->w.z;
+
+    p_camera->horizontal.x = 2 * halfWidth * p_camera->focusDistance * p_camera->u.x;
+    p_camera->horizontal.y = 2 * halfWidth * p_camera->focusDistance * p_camera->u.y;
+    p_camera->horizontal.z = 2 * halfWidth * p_camera->focusDistance * p_camera->u.z;
+
+    p_camera->vertical.x = 2 * halfHeight * p_camera->focusDistance * p_camera->v.x;
+    p_camera->vertical.y = 2 * halfHeight * p_camera->focusDistance * p_camera->v.y;
+    p_camera->vertical.z = 2 * halfHeight * p_camera->focusDistance * p_camera->v.z;
 }
 
 
