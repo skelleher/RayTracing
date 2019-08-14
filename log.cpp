@@ -153,7 +153,7 @@ void Log::Print( ZoneMask zone, const char *format, ... )
         vsprintf_s( buf, sizeof( buf ), format, vargs );
 
         if ( s_pFile ) {
-            if ( s_enableTimestamps ) {
+            if ( s_enableTimestamps && strlen(format) > 2 ) {
                 char      timestring[ 128 ];
 
 #ifdef _WIN32

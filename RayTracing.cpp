@@ -56,8 +56,8 @@ int main( int argc, char** argv )
     //
     ArgsParser args( argc, argv );
 
-    //render_mode_t mode = RENDER_MODE_CPU;
-    render_mode_t mode = RENDER_MODE_VULKAN;
+    render_mode_t mode = RENDER_MODE_CPU;
+    //render_mode_t mode = RENDER_MODE_VULKAN;
 
     if ( args.cmdOptionExists( "-c" ) ) {
         mode = RENDER_MODE_CUDA;

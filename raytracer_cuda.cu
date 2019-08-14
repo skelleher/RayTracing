@@ -110,15 +110,19 @@ int renderSceneCUDA( const Scene& scene, const Camera& camera, unsigned rows, un
     pdContext->debug          = debug;
 
     // Render the scene
+    PerfTimer frame;
+    // Render the scene
     _render<<<blocks, threads>>>( pdContext );
     CHECK_CUDA( cudaGetLastError() );
     CHECK_CUDA( cudaDeviceSynchronize() );
 
+    float msPerFrame = frame.ElapsedMilliseconds() + 1;
+    uint64_t rays = rows * cols * num_aa_samples;
+    printf( "renderSceneCUDA: %f ms (%f ms per frame, %0.2f M rays / s)\n", t.ElapsedMilliseconds(), msPerFrame, (rays / (msPerFrame/1'000.0f))/1'000'000 );
+
     CHECK_CUDA( cudaFree( pdCamera ) );
     CHECK_CUDA( cudaFree( pdScene ) );
     CHECK_CUDA( cudaFree( pdContext ) );
-
-    printf( "renderSceneCUDA: %f s\n", t.ElapsedSeconds() );
 
     return 0;
 }

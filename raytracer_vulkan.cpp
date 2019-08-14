@@ -113,9 +113,14 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     job->materialsBuffer.unmap();
     printf( "Copied %zd materials to device\n", scene.objects.size() );
 
+    PerfTimer frame;
     // Render the scene
     computeSubmitJob( *job, hCompute );
     computeWaitForJob( job->handle, COMPUTE_NO_TIMEOUT, hCompute );
+
+    float    msPerFrame = frame.ElapsedMilliseconds();
+    uint64_t rays       = rows * cols * num_aa_samples;
+    printf( "renderSceneVulkan: %f ms (%f ms per frame, %0.2f M rays / s)\n", t.ElapsedMilliseconds(), msPerFrame, (rays / (msPerFrame/1'000.0f))/1'000'000 );
 
     job->outputBuffer.map();
     uint32_t framebufferSize = rows * cols * sizeof( uint32_t );
@@ -146,8 +151,6 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
     }
 
     computeRelease( hCompute );
-
-    printf( "renderSceneVulkan: %f s\n", t.ElapsedSeconds() );
 
     return 0;
 }

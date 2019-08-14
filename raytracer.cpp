@@ -92,6 +92,8 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
 
     RenderThreadContext* contexts = new RenderThreadContext[ numBlocks ];
 
+    PerfTimer frame;
+
     std::atomic<uint32_t> blockCount = 0;
     uint32_t              blockID    = 0;
     uint32_t              yOffset    = 0;
@@ -133,10 +135,12 @@ int renderScene( const Scene& scene, const Camera& camera, unsigned rows, unsign
     }
     printf( "\n" );
 
+    float msPerFrame = frame.ElapsedMilliseconds();
+    uint64_t rays = rows * cols * num_aa_samples;
+    printf( "renderScene: %f ms (%f ms per frame, %0.2f M rays / s)\n", t.ElapsedMilliseconds(), msPerFrame, (rays / (msPerFrame/1'000.0f))/1'000'000 );
+
     delete[] contexts;
     //delete[] pScene;
-
-    printf( "renderScene: %f s\n", t.ElapsedSeconds() );
 
     return 0;
 }
