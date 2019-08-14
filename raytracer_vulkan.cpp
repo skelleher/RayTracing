@@ -20,15 +20,14 @@
 namespace pk
 {
 
-//static void      _createCamera( Camera* pdCamera );
 static void      _cameraInit( const Camera& camera, camera_glsl_t* p_camera );
 static compute_t hCompute;
 
-int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug )
+int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, unsigned cols, uint32_t* framebuffer, unsigned num_aa_samples, unsigned max_ray_depth, unsigned blockSize, bool debug, unsigned gpu )
 {
     PerfTimer t;
 
-    hCompute = computeAcquire();
+    hCompute = computeAcquire( gpu );
 
     uint32_t        inputWidth  = 1;
     uint32_t        inputHeight = 1;

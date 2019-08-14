@@ -106,7 +106,7 @@ int main( int argc, char** argv )
         enableTests = true;
     }
 
-    int preferredDevice = -1;
+    int preferredDevice = 0;
     if ( args.cmdOptionExists( "-g" ) ) {
         const std::string& arg = args.getCmdOption( "-g" );
         preferredDevice        = std::stoi( arg );
@@ -191,7 +191,7 @@ int main( int argc, char** argv )
             renderSceneISPC( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
             break;
         case RENDER_MODE_VULKAN:
-            renderSceneVulkan( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
+            renderSceneVulkan( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug, preferredDevice );
             break;
         default:
             renderScene( *scene, camera, ROWS, COLS, frameBuffer, aaSamples, maxBounce, blockSize, debug );
