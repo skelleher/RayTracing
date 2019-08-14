@@ -59,7 +59,7 @@ bool ComputeBufferVulkan::resize( const ComputeBufferDims& dims )
     // TODO: still not thread-safe; can't modify a descriptorSet if it
     // is in use by a command buffer on the GPU.
 
-    //printf( "ComputeBufferVulkan::resize( %d x %d x %d )\n", dims.width, dims.height, dims.elementSize );
+    printf( "ComputeBufferVulkan::resize( %zd x %zd x %zd )\n", dims.width, dims.height, dims.elementSize );
 
     // Make a copy, since _deallocate() zeros .dims,
     // and caller may have passed a reference to .dims into this method
@@ -115,7 +115,7 @@ void ComputeBufferVulkan::free()
 
 bool ComputeBufferVulkan::_allocate( const ComputeBufferDims& dims )
 {
-    uint32_t size = dims.width * dims.height * dims.elementSize;
+    size_t size = dims.width * dims.height * dims.elementSize;
 
     if ( allocated || size == 0 ) {
         assert( 0 );
@@ -149,7 +149,7 @@ bool ComputeBufferVulkan::_allocate( const ComputeBufferDims& dims )
         allocated  = true;
         _bind();
     } else {
-        printf( "ERROR: ComputeBufferVulkan::_allocated(%d x %d x %d)\n", dims.width, dims.height, dims.elementSize );
+        printf( "ERROR: ComputeBufferVulkan::_allocate( %zd x %zd x %zd )\n", dims.width, dims.height, dims.elementSize );
     }
 
     return allocated;
@@ -161,7 +161,7 @@ bool ComputeBufferVulkan::_bind()
     if ( pShader->descriptorSet == VK_NULL_HANDLE )
         return false;
 
-    uint32_t size = dims.width * dims.height * dims.elementSize;
+    size_t size = dims.width * dims.height * dims.elementSize;
 
     // rebind the descriptorSet
     VkDescriptorBufferInfo bufferInfo = {};

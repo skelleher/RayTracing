@@ -42,7 +42,8 @@ public:
     }
 
     ComputeBufferVulkan uniformBuffer;
-    ComputeBufferVulkan inputBuffer;
+    ComputeBufferVulkan sceneBuffer;
+    ComputeBufferVulkan materialsBuffer;
     ComputeBufferVulkan outputBuffer;
 
 private:

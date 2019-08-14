@@ -59,17 +59,17 @@ const uint MATERIAL_GLASS   = 3;
 
 // Any GLSL struct used in an array must be 4-byte aligned
 struct material_glsl_t {
-    uint  type;
-    float albedo_r;
-    float albedo_g;
-    float albedo_b;
-    float blur;
-    float refractionIndex;
+    _ALIGN(4 ) uint  type;
+    _ALIGN(4 ) float albedo_r;
+    _ALIGN(4 ) float albedo_g;
+    _ALIGN(4 ) float albedo_b;
+    _ALIGN(4 ) float blur;
+    _ALIGN(4 ) float refractionIndex;
 };
 
 
 struct hit_info_glsl_t {
-    float distance;
+    float dist;
     vec3  point;
     vec3  normal;
     uint  materialID;
@@ -85,7 +85,7 @@ struct sphere_glsl_t {
     _ALIGN(4 ) uint  materialID;
 };
 
-// Nope, no vec3 at C++ / GLSL boundaries
+// Computed by the shader 
 struct camera_glsl_t {
     _ALIGN(16) vec3  origin;
     _ALIGN(16) vec3  lookat;
@@ -142,15 +142,25 @@ layout( std140, binding = 0 ) uniform _ubo
 #endif
 
 #ifdef GLSL
-layout( std140, binding = 1 ) buffer _inputBuffer
+//layout( std140, binding = 1 ) buffer _scene
+layout( std430, binding = 1 ) buffer _scene
 {
-    sphere_glsl_t scene[];
-    //material_glsl_t        materials[];
+    uint sceneMagic;
+    sphere_glsl_t   scene[];
 };
 #endif
 
 #ifdef GLSL
-layout( std140, binding = 2 ) buffer _outputBuffer
+//layout( std140, binding = 2 ) buffer _material
+layout( std430, binding = 2 ) buffer _material
+{
+    uint materialsMagic;
+    material_glsl_t materials[];
+};
+#endif
+
+#ifdef GLSL
+layout( std140, binding = 3 ) buffer _outputBuffer
 {
     pixel imageData[];
 };

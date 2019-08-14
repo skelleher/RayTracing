@@ -1,9 +1,18 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shader_clock : enable
-//#extension GL_ARB_gpu_shader_int64: enable
 
 #include "raytracer_glsl.h"
+
+//#define DIFFUSE_SHADE
+//#define NORMAL_SHADE
+#define MATERIAL_SHADE
+
+#define FLT_MAX 3.402823466e+38
+#define FLT_MIN 1.175494351e-38
+#define DBL_MAX 1.7976931348623158e+308
+#define DBL_MIN 2.2250738585072014e-308
+
 
 // For details on GLSL layout syntax see: https://www.khronos.org/opengl/wiki/Layout_Qualifier_(GLSL)
 
@@ -11,6 +20,7 @@
 #define WORKGROUP_SIZE 32
 layout (local_size_x = WORKGROUP_SIZE, local_size_y = WORKGROUP_SIZE, local_size_z = 1 ) in;
 
+void _cameraInit( render_context_glsl_t ubo );
 ray _cameraGetRay( float u, float v );
 
 vec3 _blockColor( uint blockID, uint totalBlocks );
@@ -19,22 +29,15 @@ vec3 _gradient( float u, float v );
 vec3 _background( const ray r );
 vec3 _sky( float u, float v );
 
-//vec3 _color( const ray r, const sphere_glsl_t scene[ubo.sceneSize], const material_t materials[ubo.sceneSize], uint sceneSize, uint max_depth );
-//bool _sceneHit( const ray r, const sphere_glsl_t[ubo.sceneSize] scene, uint sceneSize, float t_min, float t_max, out hit_info hit );
-//bool _sphereHit( const ray r, const sphere_glsl_t sphere, uint sphereID, float t_min, float t_max, out hit_info hit );
-//bool _materialScatter( const ray r, const material_t[ubo.sceneSize] materials, uint materialID, const hit_info hit, out vec3 attenuation, out ray scattered );
-//bool _diffuseScatter ( const ray r, const material_t[ubo.sceneSize] materials, uint materialID, const hit_info hit, out vec3 attenuation, out ray scattered );
-//bool _metalScatter   ( const ray r, const material_t[ubo.sceneSize] materials, uint materialID, const hit_info hit, out vec3 attenuation, out ray scattered );
-//bool _glassScatter   ( const ray r, const material_t[ubo.sceneSize] materials, uint materialID, const hit_info hit, out vec3 attenuation, out ray scattered );
+vec3 _color( const ray r, uint max_depth );
+bool _sceneHit( const ray r, float t_min, float t_max, out hit_info_glsl_t p_hit );
+bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_glsl_t p_hit );
+bool _materialScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _diffuseScatter ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _metalScatter   ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
+bool _glassScatter   ( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered );
 
-vec3 _color( const ray r, /*const sphere_glsl_t scene[ubo.sceneSize], const material_t materials[ubo.sceneSize], uint sceneSize,*/ uint max_depth );
-bool _sceneHit( const ray r, /*const sphere_glsl_t[ubo.sceneSize] scene, uint sceneSize,*/ float t_min, float t_max, out hit_info_glsl_t hit );
-bool _sphereHit( const ray r, /*const sphere_glsl_t sphere, uint sphereID,*/ float t_min, float t_max, out hit_info_glsl_t hit );
-bool _materialScatter( const ray r, /*const material_t[ubo.sceneSize] materials,*/ uint materialID, const hit_info_glsl_t hit, out vec3 attenuation, out ray scattered );
-bool _diffuseScatter ( const ray r, /*const material_t[ubo.sceneSize] materials,*/ uint materialID, const hit_info_glsl_t hit, out vec3 attenuation, out ray scattered );
-bool _metalScatter   ( const ray r, /*const material_t[ubo.sceneSize] materials,*/ uint materialID, const hit_info_glsl_t hit, out vec3 attenuation, out ray scattered );
-bool _glassScatter   ( const ray r, /*const material_t[ubo.sceneSize] materials,*/ uint materialID, const hit_info_glsl_t hit, out vec3 attenuation, out ray scattered );
-
+vec3  _pointOnRay( const ray r, float dist );
 vec3  _reflect( const vec3 v, const vec3 normal );
 bool  _refract( const vec3 v, const vec3 normal, float ni_over_nt, out vec3 refracted );
 float _schlick( float cosine, float refractionIndex );
@@ -44,6 +47,12 @@ vec3  _randomInUnitSphere();
 vec3  _randomOnUnitDisk();
 float _random();
 
+// Redeclare the input arrays so we can index them
+//sphere_glsl_t   scene[length(scene)];
+//material_glsl_t materials[length(materials)];
+
+camera_glsl_t g_camera;
+
 
 void main() {
     uint width = ubo.outputWidth;
@@ -51,12 +60,15 @@ void main() {
 
     //  In order to fit the work into workgroups, some unnecessary threads are launched.
     //  We terminate those threads here. 
-    if(gl_GlobalInvocationID.x >= width || gl_GlobalInvocationID.y >= height)
+    if (gl_GlobalInvocationID.x >= width || gl_GlobalInvocationID.y >= height)
         return;
+
+    uint blockID     = uint( gl_WorkGroupID.x + gl_WorkGroupID.y + gl_WorkGroupID.z );
+    uint totalBlocks = uint( gl_NumWorkGroups.x + gl_NumWorkGroups.y + gl_NumWorkGroups.z );
 
     float u = float(gl_GlobalInvocationID.x) / float(width);
     float v = float(gl_GlobalInvocationID.y) / float(height);
-    vec4 color;
+    vec4 color = vec4(0,0,0,1);
 
     // Render each tile in a different color, with red outline
     if (ubo.debug) {
@@ -71,14 +83,37 @@ void main() {
             color = vec4(255, 0, 0, 1);
         }
     }
+    else
+    {
+        for ( uint s = 0; s < ubo.num_aa_samples; s++ )
+        {
+            //ray r = _cameraGetRay( u, v );
 
-    uint blockID     = uint( gl_WorkGroupID.x + gl_WorkGroupID.y + gl_WorkGroupID.z );
-    uint totalBlocks = uint( gl_NumWorkGroups.x + gl_NumWorkGroups.y + gl_NumWorkGroups.z );
+            vec3 leftCorner = vec3(-2, 1, -1);
+            vec3 horizontal = vec3(4.0, 0.0, 0.0);
+            vec3 vertical   = vec3(0.0, -2.0, 0.0);
+            vec3 origin     = vec3(0.0, 0.0, 0.0);
 
-    //color.rgb = _blockColor( blockID, totalBlocks );
-    //color.rgb = _randomColor( u, v );
-    //color.rgb = _gradient( u, v );
-    color.rgb = _sky( u, v );
+            ray r;
+            r.origin = origin;
+            r.direction = leftCorner + u*horizontal + v*vertical;
+
+            vec3 _sample  = _color( r, ubo.max_ray_depth );
+            //vec3 _sample = _blockColor( blockID, totalBlocks );
+            //vec3 _sample = _randomColor( u, v );
+            //vec3 _sample = _gradient( u, v );
+            //vec3 _sample = _sky( u, v );
+            //vec3 _sample = _background( r );
+
+            color.r += _sample.r;
+            color.g += _sample.g;
+            color.b += _sample.b;
+        }
+
+        color.r /= ubo.num_aa_samples;
+        color.g /= ubo.num_aa_samples;
+        color.b /= ubo.num_aa_samples;
+    }
 
     // Apply 2.0 Gamma correction
     if (ubo.applyGammaCorrection)
@@ -92,77 +127,317 @@ void main() {
 }
 
 
-//
-// Utils
-//
-
-//double dseed = 1.0;
-//double drand48( const vec3 v )
-//{
-//    double d     = 12.9898 * v.x + 78.233 * v.y;
-//    double x     = sin( d ) * 43758.5453;
-//    double fract = x - floor( x );
-//    double rval  = 2.0 * (fract)-1.0;
-//    rval         = ( 1.0 - abs( rval * dseed ) );
-//
-//    dseed = rval;
-//
-//    return rval;
-//}
-
-float _random()
-{
-    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
-    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
-
-    vec2 n = vec2(x, y);
-
-	float r = fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
-
-    return r;
-}
-
-//float xorrand( uint seed )
-//{
-//    // Xorshift algorithm from George Marsaglia's paper
-//    seed ^= ( seed << 13 );
-//    seed ^= ( seed >> 17 );
-//    seed ^= ( seed << 5 );
-//
-//    return seed;
-//}
-//
-//uint wanghash( uint seed )
-//{
-//    seed = ( seed ^ 61 ) ^ ( seed >> 16 );
-//    seed *= 9;
-//    seed = seed ^ ( seed >> 4 );
-//    seed *= 0x27d4eb2d;
-//    seed = seed ^ ( seed >> 15 );
-//    return seed;
-//}
-
-//float _random()
-//{
-//    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
-//    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
-//
-//    //int64 foo = clockARB();
-//
-//    uint seed = 1;
-//    seed = wanghash( x + y * uint(clockARB()) );
-//    seed = uint(xorrand( seed ));
-//    // Generate a random float in [0, 1)...
-//    float f = float( seed ) * ( 1.0 / 4294967296.0 );
-//
-//    return f;
-//}
-
-
 
 //
 // Renderer
 //
+
+void _cameraInit( render_context_glsl_t ubo )
+{
+    //print( "cameraInitISPC\n" );
+
+    g_camera.origin.x      = ubo.camera_origin.x;
+    g_camera.origin.y      = ubo.camera_origin.y;
+    g_camera.origin.z      = ubo.camera_origin.z;
+    g_camera.lookat.x      = ubo.camera_lookat.x;
+    g_camera.lookat.y      = ubo.camera_lookat.y;
+    g_camera.lookat.z      = ubo.camera_lookat.z;
+    g_camera.vfov          = ubo.camera_vfov;
+    g_camera.aspect        = ubo.camera_aspect;
+    g_camera.aperture      = ubo.camera_aperture;
+    g_camera.focusDistance = ubo.camera_focusDistance;
+
+    g_camera.lensRadius = g_camera.aperture / 2.0f;
+
+    float theta      = radians( g_camera.vfov );
+    float halfHeight = float(tan( theta / 2.0f ));
+    float halfWidth  = g_camera.aspect * halfHeight;
+
+    g_camera.w.x = g_camera.origin.x - g_camera.lookat.x;
+    g_camera.w.y = g_camera.origin.y - g_camera.lookat.y;
+    g_camera.w.z = g_camera.origin.z - g_camera.lookat.z;
+    g_camera.w   = normalize( g_camera.w );
+
+    vec3 up = { 0, 1, 0 };
+    g_camera.u   = cross( up, g_camera.w );
+    g_camera.u   = normalize( g_camera.u );
+    g_camera.v   = cross( g_camera.w, g_camera.u );
+
+    g_camera.leftCorner.x = g_camera.origin.x - halfWidth * g_camera.focusDistance * g_camera.u.x - halfHeight * g_camera.focusDistance * g_camera.v.x - g_camera.focusDistance * g_camera.w.x;
+    g_camera.leftCorner.y = g_camera.origin.y - halfWidth * g_camera.focusDistance * g_camera.u.y - halfHeight * g_camera.focusDistance * g_camera.v.y - g_camera.focusDistance * g_camera.w.y;
+    g_camera.leftCorner.z = g_camera.origin.z - halfWidth * g_camera.focusDistance * g_camera.u.z - halfHeight * g_camera.focusDistance * g_camera.v.z - g_camera.focusDistance * g_camera.w.z;
+
+    g_camera.horizontal.x = 2 * halfWidth * g_camera.focusDistance * g_camera.u.x;
+    g_camera.horizontal.y = 2 * halfWidth * g_camera.focusDistance * g_camera.u.y;
+    g_camera.horizontal.z = 2 * halfWidth * g_camera.focusDistance * g_camera.u.z;
+
+    g_camera.vertical.x   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.x;
+    g_camera.vertical.y   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.y;
+    g_camera.vertical.z   = 2 * halfHeight * g_camera.focusDistance * g_camera.v.z;
+}
+
+
+vec3 _color( const ray r, uint max_depth )
+{
+    hit_info_glsl_t hit;
+    vec3            attenuation;
+    ray             scattered = r;
+    vec3            color = vec3( 1.0f, 1.0f, 1.0f );
+
+    for ( uint i = 0; i < max_depth; i++ ) {
+        if ( _sceneHit( scattered, 0.001f, FLT_MAX, hit ) ) {
+#if defined( NORMAL_SHADE )
+            vec3 normal;
+            vec3 p = _pointOnRay( r, hit.dist );
+            normal.x = p.x - 0;
+            normal.y = p.y - 0;
+            normal.z = p.z = -1;
+            normal = normalize( normal );
+            normal.x = 0.5f * (normal.x + 1.0f);
+            normal.y = 0.5f * (normal.y + 1.0f);
+            normal.z = 0.5f * (normal.z + 1.0f);
+            return normal;
+#elif defined( DIFFUSE_SHADE )
+            vec3 randBounce = _randomInUnitSphere();
+
+            vec3 target;
+            target.x = hit.point.x + hit.normal.x + randBounce.x;
+            target.y = hit.point.y + hit.normal.y + randBounce.y;
+            target.z = hit.point.z + hit.normal.z + randBounce.z;
+
+            ray s;
+            s.origin      = hit.point;
+            s.direction.x = target.x - hit.point.x;
+            s.direction.y = target.y - hit.point.y;
+            s.direction.z = target.z - hit.point.z;
+            scattered = s;
+
+            color.x = color.x * 0.5f;
+            color.y = color.y * 0.5f;
+            color.z = color.z * 0.5f;
+#else
+            if ( _materialScatter( scattered, hit.materialID, hit, attenuation, scattered ) ) {
+                color *= attenuation;
+            } else {
+                break;
+            }
+#endif
+        } else {
+            color *= _background( scattered );
+            break;
+        }
+    }
+
+    return color;
+}
+
+
+bool _sphereHit( const ray r, const sphere_glsl_t sphere, float t_min, float t_max, out hit_info_glsl_t p_hit )
+{
+    vec3 oc;
+    oc.x = r.origin.x - sphere.center_x;
+    oc.y = r.origin.y - sphere.center_y;
+    oc.z = r.origin.z - sphere.center_z;
+
+    float a = dot( r.direction, r.direction );
+    float b = dot( oc, r.direction );
+    float c = dot( oc, oc ) - ( sphere.radius * sphere.radius );
+
+    float discriminant = b * b - a * c;
+
+    if ( discriminant > 0 ) {
+        float t = ( -b - sqrt( discriminant ) ) / a;
+        if ( t < t_max && t > t_min ) {
+            p_hit.dist = t;
+            p_hit.point    = _pointOnRay( r, t );
+            p_hit.normal.x = ( p_hit.point.x - sphere.center_x ) / sphere.radius;
+            p_hit.normal.y = ( p_hit.point.y - sphere.center_y ) / sphere.radius;
+            p_hit.normal.z = ( p_hit.point.z - sphere.center_z ) / sphere.radius;
+#ifdef MATERIAL_SHADE
+            p_hit.materialID = sphere.materialID;
+#endif
+            return true;
+        }
+
+        t = ( -b + sqrt( discriminant ) ) / a;
+        if ( t < t_max && t > t_min ) {
+            p_hit.dist = t;
+            p_hit.point    = _pointOnRay( r, t );
+            p_hit.normal.x = ( p_hit.point.x - sphere.center_x ) / sphere.radius;
+            p_hit.normal.y = ( p_hit.point.y - sphere.center_y ) / sphere.radius;
+            p_hit.normal.z = ( p_hit.point.z - sphere.center_z ) / sphere.radius;
+#ifdef MATERIAL_SHADE
+            p_hit.materialID = sphere.materialID;
+#endif
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+bool  _sceneHit( const ray r, float t_min, float t_max, out hit_info_glsl_t p_hit )
+{
+    bool     rval         = false;
+    float    closestSoFar = t_max;
+    hit_info_glsl_t hit;
+
+    for ( int i = 0; i < ubo.sceneSize; i++ ) {
+        hit_info_glsl_t tmp;
+        sphere_glsl_t sphere = scene[i];
+        if ( _sphereHit( r, sphere, t_min, closestSoFar, tmp ) ) {
+            rval         = true;
+            closestSoFar = tmp.dist;
+            hit          = tmp;
+        }
+    }
+
+    p_hit = hit;
+
+    return rval;
+}
+
+
+//
+// Material implementations
+//
+
+
+bool _materialScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+{
+    bool rval = false;
+
+    switch ( materials[materialID].type ) {
+        case MATERIAL_DIFFUSE:
+            rval = _diffuseScatter( r, materialID, hit, p_attenuation, p_scattered );
+            break;
+
+        case MATERIAL_METAL:
+            rval = _metalScatter( r, materialID, hit, p_attenuation, p_scattered );
+            break;
+
+        case MATERIAL_GLASS:
+            rval = _glassScatter( r, materialID, hit, p_attenuation, p_scattered );
+            break;
+    }
+
+    return rval;
+}
+
+
+bool _diffuseScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+{
+    vec3 target    = hit.point + hit.normal;
+    target = target + _randomInUnitSphere();
+    vec3 hit_point = hit.point;
+
+    ray scatter;
+    scatter.origin = hit.point;
+    scatter.direction = target.xyz - hit_point.xyz;
+
+    p_scattered     = scatter;
+    p_attenuation.r = materials[materialID].albedo_r;
+    p_attenuation.g = materials[materialID].albedo_g;
+    p_attenuation.b = materials[materialID].albedo_b;
+
+    return true;
+}
+
+
+bool _metalScatter( const ray r,  uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+{
+    vec3 direction = normalize( r.direction );
+    vec3 reflected = _reflect( direction, hit.normal );
+
+    ray scatter;
+    scatter.origin = hit.point;
+    scatter.direction = reflected.xyz + ( materials[materialID].blur * _randomInUnitSphere() );
+
+    p_scattered     = scatter;
+    p_attenuation.r = materials[materialID].albedo_r;
+    p_attenuation.g = materials[materialID].albedo_g;
+    p_attenuation.b = materials[materialID].albedo_b;
+
+    float d = dot( p_scattered.direction, hit.normal );
+
+    return ( d > 0 );
+}
+
+
+bool _glassScatter( const ray r, uint materialID, const hit_info_glsl_t hit, out vec3 p_attenuation, out ray p_scattered )
+{
+    vec3  outwardNormal;
+    vec3  reflected = _reflect( r.direction, hit.normal );
+    float niOverNt;
+    vec3  refracted;
+    float probability;
+    float cosine;
+
+    // no color shift; "white" glass
+    p_attenuation.r = 1.0;
+    p_attenuation.g = 1.0;
+    p_attenuation.b = 1.0;
+
+    if ( dot( r.direction, hit.normal ) > 0 ) {
+        outwardNormal = -hit.normal;
+        niOverNt      = materials[materialID].refractionIndex;
+        cosine        = materials[materialID].refractionIndex * dot(r.direction, hit.normal ) / length( r.direction );
+    } else {
+        outwardNormal = hit.normal;
+        niOverNt      = 1.0f / materials[materialID].refractionIndex;
+        cosine        = (-1 * dot(r.direction, hit.normal ) ) / length( r.direction );
+    }
+
+    if ( _refract( r.direction, outwardNormal, niOverNt, refracted ) ) {
+        probability = _schlick( cosine, materials[materialID].refractionIndex );
+    } else {
+        probability = 1.0f;
+    }
+
+    float p = _random();
+
+    if ( p < probability ) {
+        ray scatter;
+        scatter.origin = hit.point;
+        scatter.direction = reflected;
+        p_scattered = scatter;
+    } else {
+        ray scatter;
+        scatter.origin = hit.point;
+        scatter.direction = refracted;
+        p_scattered = scatter;
+    }
+
+    return true;
+}
+
+
+
+//
+// Camera functions
+//
+
+ray _cameraGetRay( float s, float t )
+{
+//    vec3 rand   = g_camera.lensRadius * _randomOnUnitDisk(); // calling _randomOnUnitDisk() cuts frame rate in half
+//    vec3 offset = g_camera.u * rand.x + g_camera.v * rand.y;
+
+    vec3 offset = vec3(0,0,0);
+
+    vec3 origin    = vec3( g_camera.origin.x + offset.x, g_camera.origin.y + offset.y, g_camera.origin.z + offset.z );
+
+    vec3 direction;
+    direction.x = g_camera.leftCorner.x + ( s * g_camera.horizontal.x ) + ( ( 1.0f - t ) * g_camera.vertical.x ) - g_camera.origin.x - offset.x;
+    direction.y = g_camera.leftCorner.y + ( s * g_camera.horizontal.y ) + ( ( 1.0f - t ) * g_camera.vertical.y ) - g_camera.origin.y - offset.y;
+    direction.z = g_camera.leftCorner.z + ( s * g_camera.horizontal.z ) + ( ( 1.0f - t ) * g_camera.vertical.z ) - g_camera.origin.z - offset.z;
+
+    ray r;
+    r.origin = origin;
+    r.direction = direction;
+
+    return r;
+}
 
 
 vec3 _blockColor( uint blockID, uint totalBlocks )
@@ -239,4 +514,149 @@ vec3 _sky( float u, float v )
     return color;
 }
 
+
+
+
+//
+// Utils
+//
+
+//double dseed = 1.0;
+//double drand48( const vec3 v )
+//{
+//    double d     = 12.9898 * v.x + 78.233 * v.y;
+//    double x     = sin( d ) * 43758.5453;
+//    double fract = x - floor( x );
+//    double rval  = 2.0 * (fract)-1.0;
+//    rval         = ( 1.0 - abs( rval * dseed ) );
+//
+//    dseed = rval;
+//
+//    return rval;
+//}
+
+float _random()
+{
+    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
+    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
+
+    vec2 n = vec2(x, y);
+
+	float r = fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
+
+    return r;
+}
+
+//float xorrand( uint seed )
+//{
+//    // Xorshift algorithm from George Marsaglia's paper
+//    seed ^= ( seed << 13 );
+//    seed ^= ( seed >> 17 );
+//    seed ^= ( seed << 5 );
+//
+//    return seed;
+//}
+//
+//uint wanghash( uint seed )
+//{
+//    seed = ( seed ^ 61 ) ^ ( seed >> 16 );
+//    seed *= 9;
+//    seed = seed ^ ( seed >> 4 );
+//    seed *= 0x27d4eb2d;
+//    seed = seed ^ ( seed >> 15 );
+//    return seed;
+//}
+
+//float _random()
+//{
+//    uint x = gl_GlobalInvocationID.x * WORKGROUP_SIZE + gl_WorkGroupID.x;
+//    uint y = gl_GlobalInvocationID.y * WORKGROUP_SIZE + gl_WorkGroupID.y;
+//
+//    //int64 foo = clockARB();
+//
+//    uint seed = 1;
+//    seed = wanghash( x + y * uint(clockARB()) );
+//    seed = uint(xorrand( seed ));
+//    // Generate a random float in [0, 1)...
+//    float f = float( seed ) * ( 1.0 / 4294967296.0 );
+//
+//    return f;
+//}
+
+
+vec3 _pointOnRay( const ray r, float dist )
+{
+    vec3 p;
+    p.x = r.origin.x + (r.direction.x * dist);
+    p.y = r.origin.y + (r.direction.y * dist);
+    p.z = r.origin.z + (r.direction.z * dist);
+
+    return p;
+}
+
+
+//--------------------------------------------------------------
+
+vec3 _randomInUnitSphere()
+{
+    vec3 v;
+    v.x = _random();
+    v.y = _random();
+    v.z = _random();
+
+    return v;
+}
+
+
+vec3 _randomOnUnitDisk()
+{
+    vec3 point;
+    uint maxTries = 20;
+    do {
+        vec3 v1 = vec3( _random(), _random(), 0.0f );
+        vec3 v2 = vec3( 1.0f, 1.0f, 0.0f );
+
+        point.x = 2.0f * v1.x - v2.x;
+        point.y = 2.0f * v1.y - v2.y;
+        point.z = 2.0f * v1.z - v2.z;
+    } while ( dot( point, point ) >= 1.0f && maxTries-- >= 0 );
+
+    return point;
+}
+
+
+vec3 _reflect( const vec3 v, const vec3 normal )
+{
+    return v.xyz - 2 * dot( v,  normal ) * normal.xyz;
+}
+
+
+bool _refract( const vec3 v, const vec3 normal, float ni_over_nt, out vec3 refracted )
+{
+    vec3  _v           = normalize( v );
+    float dt           = dot( _v,  normal );
+    float discriminant = 1.0f - ni_over_nt * ni_over_nt * ( 1.0f - dt * dt );
+
+    if ( discriminant > 0 ) {
+        float sqrt_d = sqrt( discriminant );
+        vec3 tmp;
+        tmp.x = ni_over_nt * (_v.x - normal.x * dt) - normal.x * sqrt_d;
+        tmp.y = ni_over_nt * (_v.y - normal.y * dt) - normal.y * sqrt_d;
+        tmp.z = ni_over_nt * (_v.z - normal.z * dt) - normal.z * sqrt_d;
+        refracted = tmp;
+
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+float _schlick( float cosine, float refractionIndex )
+{
+    float r0 = ( 1.0f - refractionIndex ) / ( 1.0f + refractionIndex );
+    r0       = r0 * r0;
+
+    return r0 + ( 1.0f - r0 ) * pow( ( 1.0f - cosine ), 5 );
+}
 

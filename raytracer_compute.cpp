@@ -39,19 +39,22 @@ std::unique_ptr<RayTracerJob> RayTracerJob::create( compute_t hCompute, uint32_t
 // IComputeJob
 void RayTracerJob::init()
 {
-    if (initialized)
+    if ( initialized )
         return;
 
-    ComputeBufferDims uniformBufferDims = { 1, 1, sizeof( render_context_glsl_t ) };
-    ComputeBufferDims inputBufferDims   = { inputWidth, inputHeight, sizeof( uint8_t ) };
-    ComputeBufferDims outputBufferDims  = { outputWidth, outputHeight, sizeof( pixel ) };
+    ComputeBufferDims uniformBufferDims  = { 1, 1, sizeof( render_context_glsl_t ) };
+    //ComputeBufferDims sceneBufferDims    = { inputWidth, inputHeight, sizeof( uint8_t ) };
+    ComputeBufferDims sceneBufferDims    = { 1, 1, sizeof( sphere_glsl_t ) };
+    ComputeBufferDims materialBufferDims = { 1, 1, sizeof( material_glsl_t ) };
+    ComputeBufferDims outputBufferDims   = { outputWidth, outputHeight, sizeof( pixel ) };
 
-    uniformBuffer.init( vulkan, &shader, 0, uniformBufferDims, COMPUTE_BUFFER_UNIFORM, COMPUTE_BUFFER_SHARED );
-    inputBuffer.init( vulkan, &shader, 1, inputBufferDims, COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
-    outputBuffer.init( vulkan, &shader, 2, outputBufferDims, COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
+    uniformBuffer.init  ( vulkan, &shader, 0, uniformBufferDims,  COMPUTE_BUFFER_UNIFORM, COMPUTE_BUFFER_SHARED );
+    sceneBuffer.init    ( vulkan, &shader, 1, sceneBufferDims,    COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
+    materialsBuffer.init( vulkan, &shader, 2, materialBufferDims, COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
+    outputBuffer.init   ( vulkan, &shader, 3, outputBufferDims,   COMPUTE_BUFFER_STORAGE, COMPUTE_BUFFER_SHARED );
 
     IComputeBuffer* buffers[] = {
-        &uniformBuffer, &inputBuffer, &outputBuffer
+        &uniformBuffer, &sceneBuffer, &materialsBuffer, &outputBuffer
     };
 
     shaderProgram.workgroupSize   = WORK_GROUP_SIZE;
@@ -70,12 +73,13 @@ void RayTracerJob::init()
 
 void RayTracerJob::presubmit()
 {
-    if ( uniformBuffer.sizeHasChanged || inputBuffer.sizeHasChanged || outputBuffer.sizeHasChanged ) {
+    if ( uniformBuffer.sizeHasChanged || sceneBuffer.sizeHasChanged || materialsBuffer.sizeHasChanged || outputBuffer.sizeHasChanged ) {
         VulkanUtils::recordCommandBuffer( vulkan, &shader );
 
-        uniformBuffer.sizeHasChanged = false;
-        inputBuffer.sizeHasChanged   = false;
-        outputBuffer.sizeHasChanged  = false;
+        uniformBuffer.sizeHasChanged   = false;
+        sceneBuffer.sizeHasChanged     = false;
+        materialsBuffer.sizeHasChanged = false;
+        outputBuffer.sizeHasChanged    = false;
     }
 }
 
@@ -138,7 +142,8 @@ void RayTracerJob::_destroy()
     vkDestroyFence( vulkan.device, shader.fence, nullptr );
 
     uniformBuffer.free();
-    inputBuffer.free();
+    sceneBuffer.free();
+    materialsBuffer.free();
     outputBuffer.free();
 
     // Free the static resources shared by all instances

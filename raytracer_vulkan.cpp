@@ -28,58 +28,101 @@ int renderSceneVulkan( const Scene& scene, const Camera& camera, unsigned rows, 
 
     hCompute = computeAcquire();
 
-    uint32_t        inputWidth  = (uint32_t)scene.objects.size() * ( sizeof( sphere_glsl_t ) + sizeof( material_glsl_t ) );
+    uint32_t        inputWidth  = 1;
     uint32_t        inputHeight = 1;
     RayTracerJobPtr job         = RayTracerJob::create( hCompute, inputWidth, inputHeight, cols, rows );
 
-    printf( "Allocated %zd device bytes for context\n", job->uniformBuffer.size() );
+    ComputeBufferDims sceneBufferDims    = { scene.objects.size() + 1, 1, sizeof( sphere_glsl_t ) };
+    ComputeBufferDims materialBufferDims = { scene.objects.size() + 1, 1, sizeof( material_glsl_t ) };
+    job->sceneBuffer.resize( sceneBufferDims );
+    job->materialsBuffer.resize( materialBufferDims );
+
+    //size_t sceneSize     = scene.objects.size() * sizeof( sphere_glsl_t );
+    size_t materialsSize = scene.objects.size() * sizeof( material_glsl_t );
+    printf( "Allocated %zd device bytes : %zd objects\n", job->sceneBuffer.size(), scene.objects.size() );
+    printf( "Allocated %zd device bytes : %zd materials\n", job->materialsBuffer.size(), scene.objects.size() );
+
+    printf( "Allocated %zd device bytes : context\n", job->uniformBuffer.size() );
     job->uniformBuffer.map();
     render_context_glsl_t* pdContext = (render_context_glsl_t*)job->uniformBuffer.mapped;
-    //pdContext->camera         = pdCamera;
-    //pdContext->scene          = pdScene;
+
+    pdContext->camera_origin.x      = camera.origin.x;
+    pdContext->camera_origin.y      = camera.origin.y;
+    pdContext->camera_origin.z      = camera.origin.z;
+    pdContext->camera_lookat.x      = camera.lookat.x;
+    pdContext->camera_lookat.y      = camera.lookat.y;
+    pdContext->camera_lookat.z      = camera.lookat.z;
+    pdContext->camera_vfov          = camera.vfov;
+    pdContext->camera_aspect        = camera.aspect;
+    pdContext->camera_aperture      = camera.aperture;
+    pdContext->camera_focusDistance = camera.focusDistance;
+
     pdContext->sceneSize            = (uint32_t)scene.objects.size();
     pdContext->outputHeight         = rows;
     pdContext->outputWidth          = cols;
     pdContext->num_aa_samples       = num_aa_samples;
     pdContext->max_ray_depth        = max_ray_depth;
-    pdContext->applyGammaCorrection = false;
+    pdContext->applyGammaCorrection = true;
     pdContext->debug                = debug;
     pdContext->monochrome           = true;
     pdContext->magic                = 0xDEADBEEF;
 
-    // Create a copy of the Camera on the device [ gross hack because Camera is created in main() since before I refactored for CUDA ]
-    //Camera* pdCamera = nullptr;
-    //CHECK_CUDA( cudaMallocManaged( &pdCamera, sizeof( Camera ) * 2 ) );
-    //    memcpy( &pdCamera[ 1 ], &camera, sizeof( camera ) );
-    //    printf( "Allocated %zd device bytes for camera\n", sizeof( camera ) );
-    //    _createCamera<<<1, 1>>>( pdCamera );
-
-    //struct UniformBufferObject ubo;
-    //_initCamera(&ubo.camera, camera);
-    //ubo.numMaterials = 0;
-    //ubo.numSpheres = 0;
-
     // Copy the Scene to device
     // Flatten the Scene object to an array of sphere_t, which is what Scene should've been in the first place
-    job->inputBuffer.map();
-    sphere_t* pdScene   = (sphere_t*)job->inputBuffer.mapped;
-    size_t    sceneSize = sizeof( sphere_t ) * scene.objects.size();
-    assert( sceneSize == job->inputBuffer.size() );
-    printf( "Allocated %zd device bytes / %zd objects\n", sceneSize, scene.objects.size() );
+    job->sceneBuffer.map();
+    uint32_t* pSceneMagic = (uint32_t*)job->sceneBuffer.mapped;
+    *pSceneMagic          = 0xDEADBEEF;
 
-    sphere_t* p = pdScene;
+    //sphere_glsl_t* pdScene = (sphere_glsl_t*)job->sceneBuffer.mapped;
+    uint8_t* pdScene = (uint8_t*)( (uint8_t*)job->sceneBuffer.mapped + 4 ); // + 16 if std140
+
+    uint8_t* p = pdScene;
+    unsigned i = 0;
     for ( IVisible* obj : scene.objects ) {
-        Sphere*   s1 = dynamic_cast<Sphere*>( obj );
-        sphere_t* s2 = (sphere_t*)p;
-        s2->center   = s1->center;
-        s2->radius   = s1->radius;
+        Sphere*        s1 = dynamic_cast<Sphere*>( obj );
+        sphere_glsl_t* s2 = (sphere_glsl_t*)p;
+        s2->center_x      = s1->center.x;
+        s2->center_y      = s1->center.y;
+        s2->center_z      = s1->center.z;
+        s2->radius        = s1->radius;
+        s2->materialID    = i;
+        //s2->materialID    = 0; // HACK: hard-code to material 0 for now
+
+        //s2->materialID    = 99;
+        //printf( "scene[%d] = %f, %f, %f r: %f m: %d\n",
+        //    i, s2->center_x, s2->center_y, s2->center_z, s2->radius, s2->materialID );
+
+        i++;
+        //p++;
+        p += sizeof( sphere_glsl_t ); // TODO: What is the alignment of each struct in an SSBO array w/ std140?
+    }
+    job->sceneBuffer.unmap();
+    printf( "Copied %zd objects to device\n", scene.objects.size() );
+
+    job->materialsBuffer.map();
+    uint32_t* pMaterialsMagic = (uint32_t*)job->materialsBuffer.mapped;
+    *pMaterialsMagic          = 0xC001C0DE;
+
+    //material_glsl_t* pdMaterials = (material_glsl_t*)job->sceneBuffer.mapped;
+    material_glsl_t* pdMaterials = (material_glsl_t*)( (uint8_t*)job->materialsBuffer.mapped + 4 ); // + 16 if std140
+
+    material_glsl_t* m = pdMaterials;
+    for ( IVisible* obj : scene.objects ) {
+        Sphere*          s1 = dynamic_cast<Sphere*>( obj );
+        material_glsl_t* m2 = (material_glsl_t*)m;
 
         // Deep copy material to the GPU
-        s2->material = *( s1->material );
+        m2->type            = (uint32_t)s1->material->type;
+        m2->albedo_r        = s1->material->albedo.r();
+        m2->albedo_g        = s1->material->albedo.g();
+        m2->albedo_b        = s1->material->albedo.b();
+        m2->blur            = s1->material->blur;
+        m2->refractionIndex = s1->material->refractionIndex;
 
-        p++;
+        m++;
     }
-    printf( "Copied %zd objects to device\n", scene.objects.size() );
+    job->materialsBuffer.unmap();
+    printf( "Copied %zd materials to device\n", scene.objects.size() );
 
     // Render the scene
     computeSubmitJob( *job, hCompute );

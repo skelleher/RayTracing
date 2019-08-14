@@ -235,29 +235,29 @@ static Scene* _randomScene()
 
     scene->objects.push_back( new Sphere( vector3( 0, -1000.0f, 0 ), 1000, new material_t( MATERIAL_DIFFUSE, vector3( 0.5f, 0.5f, 0.5f ) ) ) );
 
-    for ( int a = -11; a < 11; a++ ) {
-        for ( int b = -11; b < 11; b++ ) {
-            float   material = random();
-            vector3 center( a + 0.9f * random(), 0.2f, b + 0.9f * random() );
+    //for ( int a = -11; a < 11; a++ ) {
+    //    for ( int b = -11; b < 11; b++ ) {
+    //        float   material = random();
+    //        vector3 center( a + 0.9f * random(), 0.2f, b + 0.9f * random() );
 
-            if ( ( center - vector3( 4.0f, 0.2f, 0.0f ) ).length() > 0.9f ) {
-                if ( material < 0.8f ) {
-                    scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_DIFFUSE, vector3( random() * random(), random() * random(), random() * random() ) ) ) );
-                } else if ( material > 0.95f ) {
-                    scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_METAL, vector3( 0.5f * ( 1 + random() ), 0.5f * ( 1 + random() ), 0.5f * ( 1 + random() ) ), 0.5f * random() ) ) );
-                } else {
-                    scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_GLASS, vector3( 1, 1, 1 ), 1.0f, 1.5f ) ) );
-                }
-            }
-        }
-    }
+    //        if ( ( center - vector3( 4.0f, 0.2f, 0.0f ) ).length() > 0.9f ) {
+    //            if ( material < 0.8f ) {
+    //                scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_DIFFUSE, vector3( random() * random(), random() * random(), random() * random() ) ) ) );
+    //            } else if ( material > 0.95f ) {
+    //                scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_METAL, vector3( 0.5f * ( 1 + random() ), 0.5f * ( 1 + random() ), 0.5f * ( 1 + random() ) ), 0.5f * random() ) ) );
+    //            } else {
+    //                scene->objects.push_back( new Sphere( center, 0.2f, new material_t( MATERIAL_GLASS, vector3( 1, 1, 1 ), 1.0f, 1.5f ) ) );
+    //            }
+    //        }
+    //    }
+    //}
 
-    scene->objects.push_back( new Sphere( vector3( -4, 1, 0 ), 1.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.4f, 0.2f, 0.1f ) ) ) );
-    scene->objects.push_back( new Sphere( vector3( 0, 1, 0 ), 1.0f, new material_t( MATERIAL_GLASS, vector3( 0.4f, 0.2f, 0.1f ), 1.0f, 1.5f ) ) );
-    scene->objects.push_back( new Sphere( vector3( 4, 1, 0 ), 1.0f, new material_t( MATERIAL_METAL, vector3( 0.7f, 0.6f, 0.5f ), 0.0f ) ) );
+    //scene->objects.push_back( new Sphere( vector3( -4, 1, 0 ), 1.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.4f, 0.2f, 0.1f ) ) ) );
+    //scene->objects.push_back( new Sphere( vector3( 0, 1, 0 ), 1.0f, new material_t( MATERIAL_GLASS, vector3( 0.4f, 0.2f, 0.1f ), 1.0f, 1.5f ) ) );
+    //scene->objects.push_back( new Sphere( vector3( 4, 1, 0 ), 1.0f, new material_t( MATERIAL_METAL, vector3( 0.7f, 0.6f, 0.5f ), 0.0f ) ) );
 
-    //scene->objects.push_back( new Sphere( vector3( 0, 0, -1 ), 0.5f, new material_t( MATERIAL_DIFFUSE, vector3( 0.4f, 0.2f, 0.1f ) ) ) );
-    //scene->objects.push_back( new Sphere( vector3( 0, -100.5f, -1 ), 100.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.5f, 0.5f, 0.5f ) ) ) );
+    scene->objects.push_back( new Sphere( vector3( 0, 0, -1 ), 0.5f, new material_t( MATERIAL_DIFFUSE, vector3( 0.4f, 0.2f, 0.1f ) ) ) );
+    scene->objects.push_back( new Sphere( vector3( 0, -100.5f, -1 ), 100.0f, new material_t( MATERIAL_DIFFUSE, vector3( 0.5f, 0.5f, 0.5f ) ) ) );
 
     return scene;
 }
