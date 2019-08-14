@@ -106,8 +106,6 @@ struct camera_glsl_t {
 
 //
 // Shader inputs and outputs
-// Do NOT use vec3 for Uniform or Storage buffers,
-// when combined with std140
 //
 #ifndef GLSL
 struct render_context_glsl_t {
@@ -124,7 +122,7 @@ struct render_context_glsl_t {
     _ALIGN(16) vec3 camera_origin;
     _ALIGN(16) vec3 camera_lookat;
 
-    _ALIGN(4 ) uint numSceneObjects;
+    _ALIGN(4 ) uint sceneSize;
     _ALIGN(4 ) uint num_aa_samples;
     _ALIGN(4 ) uint max_ray_depth;
 
